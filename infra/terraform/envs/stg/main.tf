@@ -95,3 +95,25 @@ resource "aws_ssm_parameter" "documents_bucket" {
   type  = "String"
   value = module.storage.documents_bucket_name
 }
+
+# ---------------------------------------------------------------
+# HTTPS（ドメインを買わずに sslip.io を使う）
+# 15-134-254-123.sslip.io のような名前は、その IP アドレスに解決される。
+# Caddy がこの名前で Let's Encrypt の証明書を自動で取得し、HTTP は HTTPS にリダイレクトする
+# ---------------------------------------------------------------
+locals {
+  site_domain = "${replace(module.app_server.public_ip, ".", "-")}.sslip.io"
+}
+
+resource "aws_ssm_parameter" "site_address" {
+  name  = "${local.ssm_prefix}/SITE_ADDRESS"
+  type  = "String"
+  value = local.site_domain
+}
+
+# HTTPS で配信しているので、ログインの Cookie は HTTPS のときだけ送る
+resource "aws_ssm_parameter" "session_cookie_secure" {
+  name  = "${local.ssm_prefix}/SESSION_COOKIE_SECURE"
+  type  = "String"
+  value = "true"
+}

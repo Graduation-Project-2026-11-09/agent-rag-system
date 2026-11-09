@@ -1,6 +1,10 @@
+output "url" {
+  description = "stg の URL"
+  value       = "https://${local.site_domain}"
+}
+
 output "public_ip" {
-  description = "stg の URL は http://<この IP>"
-  value       = module.app_server.public_ip
+  value = module.app_server.public_ip
 }
 
 output "instance_id" {
