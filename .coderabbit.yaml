@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# AI レビューの設定。承認（Approve）はリーダー・副リーダーが行い、CodeRabbit は補助とする
+language: ja-JP
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/package-lock.json"
+    - "!**/uv.lock"
+chat:
+  auto_reply: true
