@@ -1,0 +1,2 @@
+# コピーして terraform.tfvars を作成する（Git 管理外）
+budget_email = "you@example.com"

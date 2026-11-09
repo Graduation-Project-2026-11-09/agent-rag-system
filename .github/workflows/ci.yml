@@ -1,9 +1,9 @@
 name: CI
 
+# main への push 時は deploy-stg.yml から呼ばれる（テストが通ったときだけデプロイするため）
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
 
 jobs:
   backend:

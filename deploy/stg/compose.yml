@@ -1,0 +1,44 @@
+# stg の EC2（/opt/app）で動かす構成。deploy.sh が main の最新版を取得して使う
+name: agent-rag
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  web:
+    image: ghcr.io/graduation-project-2026-11-09/agent-rag-web:main
+    environment:
+      # 未設定なら HTTP（:80）のみ。HTTPS にするときは SSM に SITE_ADDRESS を登録する
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+    <<: *logging
+
+  api:
+    image: ghcr.io/graduation-project-2026-11-09/agent-rag-api:main
+    env_file: .env
+    restart: unless-stopped
+    <<: *logging
+
+  worker:
+    image: ghcr.io/graduation-project-2026-11-09/agent-rag-api:main
+    command: python -m worker.main
+    env_file: .env
+    restart: unless-stopped
+    <<: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:

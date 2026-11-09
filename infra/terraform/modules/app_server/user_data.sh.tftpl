@@ -1,0 +1,62 @@
+#!/bin/bash
+# EC2 の初回起動時に1回だけ実行される
+set -euxo pipefail
+
+apt-get update
+apt-get install -y ca-certificates curl unzip
+
+# Docker Engine と Compose
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl enable --now docker
+
+# AWS CLI v2（SSM パラメータの取得に使う）
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
+
+# メモリ 2GB では資料の取り込み時に足りなくなるおそれがあるため、2GB のスワップを作る
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo "/swapfile none swap sw 0 0" >> /etc/fstab
+
+# デプロイ先
+mkdir -p /opt/app
+
+# 自動デプロイ: 起動 1 分後とその後 2 分ごとに、リポジトリの deploy.sh を取得して実行する。
+# deploy.sh は GHCR の最新イメージを pull し、変わっていればコンテナを入れ替える
+cat > /etc/systemd/system/app-deploy.service <<'EOF'
+[Unit]
+Description=Pull latest images from GHCR and restart containers
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=AWS_REGION=${region}
+Environment=SSM_PREFIX=${ssm_prefix}
+ExecStart=/bin/bash -c 'curl -fsSL ${deploy_script_url} -o /opt/app/deploy.sh && bash /opt/app/deploy.sh'
+EOF
+
+cat > /etc/systemd/system/app-deploy.timer <<'EOF'
+[Unit]
+Description=Run app-deploy every 2 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now app-deploy.timer
