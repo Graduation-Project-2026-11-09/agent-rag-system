@@ -1,0 +1,7 @@
+# Windows でも改行コードを LF に統一する（コンテナ内のスクリプトが壊れないように）
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.xlsx binary
+*.docx binary

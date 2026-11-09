@@ -1,0 +1,72 @@
+# ローカル開発用。`docker compose up` で全サービスが起動する
+name: ai-helpdesk
+
+x-backend: &backend
+  build:
+    context: ./backend
+    target: dev
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-app}
+    MAIL_HOST: mailpit
+    MAIL_PORT: "1025"
+  volumes:
+    - ./backend:/app
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    # 本番の RDS for PostgreSQL 17 + pgvector に合わせる
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *backend
+    command: flask --app app run --host 0.0.0.0 --port 5000 --debug
+    ports:
+      - "5000:5000"
+
+  worker:
+    <<: *backend
+    command: python -m worker.main
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_PROXY: http://api:5000
+      # Windows のフォルダをマウントするとファイル変更を検知できないため polling にする
+      VITE_USE_POLLING: "1"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+  # 開発中のメール確認用（本番は Amazon SES）。http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+volumes:
+  db-data:
