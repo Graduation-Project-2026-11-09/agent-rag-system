@@ -28,8 +28,8 @@ docs/       設計書・API 仕様書
 ### 起動
 
 ```sh
-git clone <リポジトリURL>
-cd ai-helpdesk
+git clone https://github.com/Graduation-Project-2026-11-09/agent-rag-system.git
+cd agent-rag-system
 cp .env.example .env      # OPENAI_API_KEY は各自で設定する
 docker compose up --build
 ```
