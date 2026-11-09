@@ -306,7 +306,7 @@ COMMIT;
 | status | varchar(16) | NN, 既定 `completed`, CHECK (`completed` / `stopped` / `failed`) | 生成を停止した・失敗した回答を表す |
 | next_steps | jsonb | | 次に行う手続き `[{id, title, description, department, deadline}]` |
 | next_steps_done | jsonb | NN, 既定 `[]` | チェックを付けた手続きの id（再読み込みしても残す） |
-| inquiry_suggestion | jsonb | | 問い合わせの提案 `{department, reason, missingAspects, subject, body}`。判定が `partial` / `needs_individual_judgment` / `no_evidence` のときだけ |
+| inquiry_suggestion | jsonb | | 問い合わせの提案 `{department, reason, missingAspects, subject, body}`。**判定が `no_evidence`（根拠なし）のときだけ** |
 | inquiry_suggestion_dismissed_at | timestamptz | | 「今回は不要」を押した日時。押したら提案を表示しない |
 | feedback | varchar(8) | CHECK (`good` / `bad`) | 回答の評価。NULL は未評価。何度でも変更・取り消しできる |
 | created_at | timestamptz | NN, 既定 now() | |
@@ -564,7 +564,7 @@ Redis などを増やさず、PostgreSQL だけでキューを作る（EC2 1 台
 | eval_question_id | integer | NN, FK → eval_questions | |
 | answer | text | NN | AI の回答 |
 | outcome | varchar(16) | NN, CHECK (`answered` / `no_answer` / `error`) | |
-| decision | varchar(32) | | AI の判定。`expected_decision` と比べて、問い合わせ提案の再現率・適合率を出す |
+| decision | varchar(32) | | AI の判定。`expected_decision` と比べて、「根拠なし」（＝問い合わせの提案）の再現率・適合率を出す |
 | suggested_department_id | integer | FK → departments | AI が提案した宛先（宛先の正解率を出す） |
 | retrieved_document_ids | integer[] | NN | 根拠として使った資料 |
 | is_retrieval_hit | boolean | NN | `expected_document_ids` をすべて見つけられたか（**必要な情報を取得できた割合**） |
