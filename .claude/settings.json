@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./**/*.tfvars)",
+      "Read(./**/backend.hcl)",
+      "Read(./**/*.tfstate)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(terraform destroy:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(terraform apply:*)",
+      "Bash(aws:*)"
+    ]
+  }
+}
