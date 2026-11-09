@@ -18,4 +18,5 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project --no-dev
 COPY . .
 EXPOSE 8000
-CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:8000", "app:create_app()"]
+# 1 つの処理が固まっても他のリクエストを受けられるよう、スレッドでも並行に処理する
+CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "60", "--bind", "0.0.0.0:8000", "app:create_app()"]
