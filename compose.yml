@@ -48,7 +48,9 @@ services:
     command: python -m worker.main
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     environment:
       VITE_API_PROXY: http://api:5000
       # Windows のフォルダをマウントするとファイル変更を検知できないため polling にする

@@ -1,0 +1,15 @@
+# stg・本番用。画面のファイルを配信し、/api/* を Flask（Gunicorn）に転送する
+# SITE_ADDRESS にドメイン（例: 1-2-3-4.sslip.io）を入れると、Caddy が HTTPS 証明書を自動で取得する
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

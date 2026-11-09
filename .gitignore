@@ -20,3 +20,13 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Terraform（.terraform.lock.hcl はコミットする）
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+crash.log
+*.tfplan
