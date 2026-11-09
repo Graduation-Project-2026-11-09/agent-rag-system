@@ -6,7 +6,7 @@
 - **最小構成**: ALB・NAT ゲートウェイ・ECS は使わず、EC2 1台 + RDS で動かす
 - **平日 9:00〜22:00 だけ起動**: 8:45 に自動起動、22:00 に自動停止（祝日は考慮しない）
 - **バックアップは起動中に取る**: RDS は停止中に自動バックアップを取らないため、バックアップは JST 12:00、メンテナンスは水曜 13:00 に設定している
-- **ドメインなし**: EC2 の固定 IP（Elastic IP）でアクセスする。ドメインは本番の前に検討する
+- **ドメインなし・HTTPS あり**: URL は **https://15-134-254-123.sslip.io**。sslip.io は IP アドレスを含む名前をその IP に解決する無料サービスで、Caddy が Let's Encrypt の証明書を自動で取得・更新する（SSM の `SITE_ADDRESS`）。HTTP は HTTPS に転送される。ドメインは本番の前に検討する
 - **SSH を開けない**: サーバへの接続とデプロイは Systems Manager（Session Manager / Run Command）で行う
 - **GitHub に AWS の鍵を置かない**: このアカウントは AWS 管理の SCP で OIDC プロバイダの作成が禁止されているため、GitHub Actions は AWS にログインしない。イメージは GHCR に置き、EC2 が 2 分ごとに取りに行く（下記「自動デプロイ」）
 - **無料プランの制限**: RDS のバックアップ保持期間に上限があるため、stg は 1 日にしている（計画書の 7 日は本番で対応）
@@ -116,4 +116,4 @@ aws ssm get-parameter --name /agent-rag/stg/SEED_USER_PASSWORD --with-decryption
 ## まだ入っていないもの
 - SES（メール送信）
 - CloudWatch のアラームと SNS による障害通知
-- 本番環境（`envs/prod`）とドメイン・HTTPS
+- 本番環境（`envs/prod`）と独自ドメイン
