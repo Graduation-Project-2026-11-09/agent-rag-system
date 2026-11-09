@@ -26,7 +26,7 @@ variable "db_instance_class" {
 }
 
 variable "enable_schedule" {
-  description = "平日 9:00〜15:00 だけ起動する。発表前などで常時稼働させたいときは false"
+  description = "平日 9:00〜22:00 だけ起動する。発表前などで常時稼働させたいときは false"
   type        = bool
   default     = true
 }
