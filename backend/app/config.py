@@ -22,6 +22,13 @@ class Config:
             "keepalives_idle": 30,
             "keepalives_interval": 10,
             "keepalives_count": 3,
+            # Gunicorn の gthread ワーカーはリクエスト単位で打ち切らないため、DB 側で上限を設ける。
+            # SQL の実行は 30 秒、ロック待ちは 5 秒、トランザクション中の放置は 60 秒まで
+            "options": (
+                "-c statement_timeout=30000"
+                " -c lock_timeout=5000"
+                " -c idle_in_transaction_session_timeout=60000"
+            ),
         },
     }
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
