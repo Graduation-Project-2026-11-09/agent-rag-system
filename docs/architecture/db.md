@@ -306,7 +306,7 @@ COMMIT;
 | status | varchar(16) | NN, 既定 `completed`, CHECK (`completed` / `stopped` / `failed`) | 生成を停止した・失敗した回答を表す |
 | next_steps | jsonb | | 次に行う手続き `[{id, title, description, department, deadline}]` |
 | next_steps_done | jsonb | NN, 既定 `[]` | チェックを付けた手続きの id（再読み込みしても残す） |
-| inquiry_suggestion | jsonb | | 問い合わせの提案 `{department, reason, subject, body}`。AI が「資料だけでは解決できない」と判断したときだけ |
+| inquiry_suggestion | jsonb | | 問い合わせの提案 `{department, reason, missingAspects, subject, body}`。判定が `partial` / `needs_individual_judgment` / `no_evidence` のときだけ |
 | inquiry_suggestion_dismissed_at | timestamptz | | 「今回は不要」を押した日時。押したら提案を表示しない |
 | feedback | varchar(8) | CHECK (`good` / `bad`) | 回答の評価。NULL は未評価。何度でも変更・取り消しできる |
 | created_at | timestamptz | NN, 既定 now() | |
@@ -326,6 +326,8 @@ assistant のメッセージ 1 件につき 1 行。**失敗した実行も記�
 | mode | varchar(16) | NN, CHECK (`agentic` / `basic`) | Agentic RAG か通常の RAG か（比較評価用。計画書のリスク対策⑤） |
 | config | jsonb | NN, 既定 `{}` | 実行時の設定 `{chatModel, embeddingModel, topK, maxRetries, promptVersion}`（設定を変えたときに結果を比べるため） |
 | outcome | varchar(16) | NN, CHECK (`answered` / `no_answer` / `stopped` / `error`) | 根拠ありで回答・根拠なしで回答しなかった・停止・失敗。問い合わせ済みかは `inquiries` から求める |
+| decision | varchar(32) | CHECK (`answered` / `partial` / `needs_individual_judgment` / `no_evidence` / `out_of_scope`) | 充足度の判定（[ai.md「問い合わせを提案するかの判断」](ai.md#問い合わせを提案するかの判断)）。停止・失敗のときは NULL |
+| tool_call_count | integer | NN, 既定 0 | 検索ループでツールを呼んだ回数（上限 8） |
 | steps | jsonb | NN, 既定 `[]` | 検索過程 `[{type, title, detail, items, queries, results, sufficient}]`（画面に表示するだけなので jsonb） |
 | search_count | integer | NN, CHECK (`search_count BETWEEN 0 AND 4`) | 検索した回数（初回 ＋ 再検索は最大 3 回） |
 | duration_ms | integer | NN | 質問から回答完了までの時間 |
@@ -493,7 +495,7 @@ RETURNING last_number;
 - **値を更新するのは次の 2 か所だけ**で、どちらも同じトランザクションで messages / inquiries と一緒に更新する
   - `POST /messages/:id/feedback` … `feedback` を更新
   - `POST /inquiries` … `result` を `inquiry` に更新
-- 記録時の `result`: 問い合わせの提案があれば `no_answer`、なければ `resolved`
+- 記録時の `result`: 判定が `no_evidence` なら `no_answer`、それ以外は `resolved`（一部だけ回答した場合も、利用者が問い合わせを送らなければ自己解決とみなす）。問い合わせを送ると `inquiry` に変わる
 - 集計（No.29）: 自己解決率 = `resolved` の割合、平均検索回数、平均応答時間、高評価率、削減時間 = `resolved` の件数 × 20 分（計画書の試算と同じ）
 
 ### 4.8 worker（バックグラウンド処理）
@@ -539,6 +541,8 @@ Redis などを増やさず、PostgreSQL だけでキューを作る（EC2 1 台
 | expected_answer | text | NN | 正解の要点（人が採点するときの基準） |
 | expected_document_ids | integer[] | NN, 既定 `{}` | 回答に必要な資料。検索でこれらを見つけられたかを自動で判定する |
 | category | varchar(32) | | 例: 言い換えが必要・複数の資料が必要・資料にない（推測で答えてはいけない） |
+| expected_decision | varchar(32) | NN | 正しい判定（`agent_runs.decision` と同じ値） |
+| expected_department_id | integer | FK → departments | 問い合わせを提案すべき場合の、正しい宛先 |
 | is_active | boolean | NN, 既定 true | |
 | created_at | timestamptz | NN, 既定 now() | |
 
@@ -560,6 +564,8 @@ Redis などを増やさず、PostgreSQL だけでキューを作る（EC2 1 台
 | eval_question_id | integer | NN, FK → eval_questions | |
 | answer | text | NN | AI の回答 |
 | outcome | varchar(16) | NN, CHECK (`answered` / `no_answer` / `error`) | |
+| decision | varchar(32) | | AI の判定。`expected_decision` と比べて、問い合わせ提案の再現率・適合率を出す |
+| suggested_department_id | integer | FK → departments | AI が提案した宛先（宛先の正解率を出す） |
 | retrieved_document_ids | integer[] | NN | 根拠として使った資料 |
 | is_retrieval_hit | boolean | NN | `expected_document_ids` をすべて見つけられたか（**必要な情報を取得できた割合**） |
 | accuracy_score | smallint | CHECK (1〜5) | 人が採点した正確さ（**回答の正確性**）。未採点は NULL |
@@ -715,6 +721,7 @@ RDS のストレージ 20GB に十分収まる。stg（db.t4g.micro、メモリ 
    usage_logs（集計用）
 ```
 
+- 検索（②〜④）は、コードが上限を管理するループの中で AI がツール（検索・前後のチャンク・見出し一覧）を選んで行う。詳しくは [ai.md「Agent の設計」](ai.md#agent-の設計2026-11-09-決定)。ツールの呼び出しも `agent_runs.steps` に記録する
 - **公開範囲は ③ の SQL で絞り込む**。生成 AI に「この資料は使わないで」と指示する方法は使わない（AI に渡す前に除外することで、確実に漏えいを防ぐ）
 - 通常の RAG（`mode = basic`）は ①②④ を省き、質問をそのまま 1 回だけ検索して回答する。同じテーブルに記録するので、そのまま比較できる
 - 生成を停止・失敗した場合も `messages`（status）と `agent_runs`（outcome・usage）は記録し、`usage_logs` には記録しない
