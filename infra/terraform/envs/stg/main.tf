@@ -43,13 +43,14 @@ module "app_server" {
   deploy_script_url    = "https://raw.githubusercontent.com/${var.github_repo}/main/deploy/stg/deploy.sh"
 }
 
-# 平日 8:45 に起動、15:00 に停止（利用時間 9:00〜15:00）。祝日は考慮しない
+# 平日 8:45 に起動、22:00 に停止（利用時間 9:00〜22:00）。祝日は考慮しない
 module "schedule" {
   source         = "../../modules/schedule"
   name           = local.name
   instance_id    = module.app_server.instance_id
   db_instance_id = module.database.instance_id
   enabled        = var.enable_schedule
+  stop_cron      = "cron(0 22 ? * MON-FRI *)"
 }
 
 # ---------------------------------------------------------------
