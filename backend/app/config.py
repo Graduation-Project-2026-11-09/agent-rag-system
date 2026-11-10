@@ -32,12 +32,6 @@ class Config:
         },
     }
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-    # 使用するモデル（docs/architecture/ai.md「使用するモデル」）
-    OPENAI_CHAT_MODEL_FAST = os.environ.get("OPENAI_CHAT_MODEL_FAST", "gpt-6-luna")
-    OPENAI_CHAT_MODEL_ANSWER = os.environ.get("OPENAI_CHAT_MODEL_ANSWER", "gpt-6-luna")
-    OPENAI_EMBEDDING_MODEL = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-    # chunks.embedding の次元数（halfvec(3072)）。モデルを変えるときはマイグレーションも必要
-    OPENAI_EMBEDDING_DIMENSIONS = int(os.environ.get("OPENAI_EMBEDDING_DIMENSIONS", "3072"))
     MAIL_HOST = os.environ.get("MAIL_HOST", "localhost")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "1025"))
 
