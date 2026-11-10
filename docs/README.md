@@ -15,6 +15,8 @@
 |---|---|
 | [architecture/overview.md](architecture/overview.md) | 使用技術とプロジェクトの構成 |
 | [architecture/aws.md](architecture/aws.md) | AWS の構成と月額費用 |
-| [architecture/ai.md](architecture/ai.md) | AI（Agentic RAG）の構成 ※一部未定 |
-| [api-spec.md](api-spec.md) | API 仕様書（画面と Flask の取り決め）。実装済み: 認証 |
+| [architecture/ai.md](architecture/ai.md) | AI（Agentic RAG）の構成と評価の方法 |
+| [architecture/domain-model.md](architecture/domain-model.md) | ドメインモデル（集約・状態遷移・ルール） |
+| [architecture/db.md](architecture/db.md) | DB 設計（テーブル定義・ER 図） |
+| [api-spec.md](api-spec.md) | API 仕様書（画面と Flask の取り決め）。すべての画面の API を実装済み |
 | [../infra/terraform/README.md](../infra/terraform/README.md) | Terraform で AWS を構築する手順 |
