@@ -136,30 +136,34 @@ def mark_read(notice_id: int):
 
 
 def _with_counts(notices: list[Notice]) -> list[dict]:
-    """既読数と配信対象の人数をまとめて数えて、API の形にする。"""
-    read_counts = dict(
-        db.session.execute(
-            select(NoticeRead.notice_id, func.count())
-            .where(NoticeRead.notice_id.in_([n.id for n in notices]))
-            .group_by(NoticeRead.notice_id)
-        ).all()
-    )
+    """既読数と配信対象の人数をまとめて数えて、API の形にする。
+
+    既読数も配信対象の人数と同じ条件（利用停止の人を除き、今の配信先の部署の人）で数える。
+    既読をすべて数えると、既読のあとに利用停止になった人や、配信先から外した部署の人が残り、
+    既読率が 100% を超えることがあるため。
+    """
+    active = User.status != "suspended"
+    reads_by_department: dict[int, dict[str, int]] = {}
+    for notice_id, department, count in db.session.execute(
+        select(NoticeRead.notice_id, User.department, func.count())
+        .join(User, User.id == NoticeRead.user_id)
+        .where(NoticeRead.notice_id.in_([n.id for n in notices]), active)
+        .group_by(NoticeRead.notice_id, User.department)
+    ):
+        reads_by_department.setdefault(notice_id, {})[department] = count
     users_by_department = dict(
         db.session.execute(
-            select(User.department, func.count())
-            .where(User.status != "suspended")
-            .group_by(User.department)
+            select(User.department, func.count()).where(active).group_by(User.department)
         ).all()
     )
-    total = sum(users_by_department.values())
+
     result = []
     for notice in notices:
-        target = (
-            sum(users_by_department.get(d, 0) for d in notice.target_departments)
-            if notice.target_departments
-            else total
-        )
-        result.append(notice.to_dict(read_counts.get(notice.id, 0), target))
+        reads = reads_by_department.get(notice.id, {})
+        departments = notice.target_departments or list(users_by_department)
+        read_count = sum(reads.get(d, 0) for d in departments)
+        target_count = sum(users_by_department.get(d, 0) for d in departments)
+        result.append(notice.to_dict(read_count, target_count))
     return result
 
 

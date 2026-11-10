@@ -454,3 +454,25 @@ def test_invalid_update_does_not_change_user(client, people):
     # 自分の名前の変更（権限・状態はそのまま）はできる
     own = client.patch(f"/api/admin/users/{people['admin'].id}", json={"name": "管理 次郎"})
     assert own.status_code == 200
+
+
+def test_read_count_uses_same_conditions_as_target_count(client, people):
+    login_as(client, people["hr"])
+    notice = client.post("/api/admin/notices", json=_notice()).get_json()
+    login_as(client, people["user"])
+    client.post(f"/api/notices/{notice['id']}/read")
+    login_as(client, people["it"])
+    client.post(f"/api/notices/{notice['id']}/read")
+
+    # 既読のあとに利用停止になった人は、既読数にも配信対象の人数にも数えない
+    people["it"].status = "suspended"
+    db.session.commit()
+    login_as(client, people["hr"])
+    counted = client.get(f"/api/admin/notices/{notice['id']}").get_json()
+    assert (counted["readCount"], counted["targetCount"]) == (1, 3)
+
+    # 配信先から外した部署の人の既読も数えない
+    target = {"type": "departments", "departments": ["人事部"]}
+    client.put(f"/api/admin/notices/{notice['id']}", json=_notice(target=target))
+    counted = client.get(f"/api/admin/notices/{notice['id']}").get_json()
+    assert (counted["readCount"], counted["targetCount"]) == (0, 1)
