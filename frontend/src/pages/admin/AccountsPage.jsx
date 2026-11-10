@@ -107,13 +107,8 @@ export default function AccountsPage() {
       onConfirm: () => run(() => userApi.remove(u.id), 'アカウントを削除しました'),
     });
 
-  const askReset = (u) =>
-    setConfirm({
-      title: 'パスワード再設定メールを送信しますか？',
-      message: `${u.email} あてに、パスワード再設定用のリンクを送信します。`,
-      confirmLabel: '送信する',
-      onConfirm: () => run(() => userApi.sendPasswordReset(u.id), '再設定メールを送信しました'),
-    });
+  // パスワード再設定はメールを送る仕組みができるまで準備中（docs/architecture/ai.md）
+  const askReset = () => toast('パスワード再設定は準備中です', 'error');
 
   return (
     <div className="admin-page">

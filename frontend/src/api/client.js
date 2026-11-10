@@ -1,6 +1,7 @@
 // API 通信の共通処理。
 // 本番(Flask)では Cookie セッション認証を想定し credentials: 'include' で送信する。
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
+// すべての画面の API が Flask にできたため、既定は実 API。VITE_USE_MOCK=true でモックに戻せる
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 export class ApiError extends Error {

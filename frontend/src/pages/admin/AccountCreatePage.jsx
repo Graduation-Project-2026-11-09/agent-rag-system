@@ -8,7 +8,7 @@ import PageHeader from '../../components/common/PageHeader';
 import Field from '../../components/common/Field';
 import { ROLES } from '../../constants';
 
-const EMPTY = { employeeId: '', name: '', email: '', department: '', role: 'user', handlesDepartment: '', passwordMode: 'invite', password: '' };
+const EMPTY = { employeeId: '', name: '', email: '', department: '', role: 'user', handlesDepartment: '', passwordMode: 'password', password: '' };
 
 function SingleForm() {
   const navigate = useNavigate();
@@ -36,7 +36,7 @@ function SingleForm() {
     setSaving(true);
     try {
       await userApi.create(form);
-      toast(form.passwordMode === 'invite' ? `${form.name} さんに招待メールを送信しました` : 'アカウントを作成しました');
+      toast('アカウントを作成しました');
       navigate('/admin/accounts');
     } catch (err) {
       toast(err.message, 'error');
@@ -91,11 +91,12 @@ function SingleForm() {
 
       <h3>初回ログイン</h3>
       <div className="radio-row">
-        <label className="radio"><input type="radio" value="invite" checked={form.passwordMode === 'invite'} onChange={set('passwordMode')} /> 招待メールを送信（本人がパスワードを設定）</label>
+        {/* 招待メールはメールを送る仕組みができるまで準備中（docs/architecture/ai.md） */}
+        <label className="radio muted"><input type="radio" value="invite" disabled /> 招待メールを送信（準備中）</label>
         <label className="radio"><input type="radio" value="password" checked={form.passwordMode === 'password'} onChange={set('passwordMode')} /> 初期パスワードを設定</label>
       </div>
       {form.passwordMode === 'password' && (
-        <Field label="初期パスワード" error={errors.password} hint="12文字以上。初回ログイン時に変更を求めます">
+        <Field label="初期パスワード" error={errors.password} hint="12文字以上。本人には安全な方法で伝えてください">
           <input className="input" type="password" value={form.password} onChange={set('password')} />
         </Field>
       )}
@@ -127,6 +128,7 @@ function BulkForm() {
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const onFile = async (file) => {
     if (!file) return;
@@ -136,14 +138,21 @@ function BulkForm() {
   };
 
   const submit = async () => {
-    const res = await userApi.bulkCreate(rows);
-    setResult(res);
-    if (res.created) toast(`${res.created} 件のアカウントを作成し、招待メールを送信しました`);
+    setSaving(true);
+    try {
+      const res = await userApi.bulkCreate(rows);
+      setResult(res);
+      if (res.created) toast(`${res.created} 件のアカウントを「招待中」で登録しました`);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="card form-card stack">
-      <p className="muted">CSVファイルで複数のアカウントを一括登録します。登録したアカウントには招待メールが送信されます。</p>
+      <p className="muted">CSVファイルで複数のアカウントを一括登録します。登録したアカウントは「招待中」になります。招待メールは準備中のため、送信されるようになるまではログインできません。</p>
       <pre className="code-box">{SAMPLE_CSV}</pre>
       <div className="row gap-sm">
         <label className="btn">
@@ -175,7 +184,7 @@ function BulkForm() {
       )}
       <div className="form-actions">
         <button className="btn" onClick={() => navigate('/admin/accounts')}>一覧へ戻る</button>
-        <button className="btn btn-primary" disabled={!rows.length || !!result} onClick={submit}>{rows.length} 件を登録</button>
+        <button className="btn btn-primary" disabled={!rows.length || !!result || saving} onClick={submit}>{saving ? '登録中…' : `${rows.length} 件を登録`}</button>
       </div>
     </div>
   );

@@ -71,13 +71,56 @@ class Document(db.Model):
     )
 
     versions: Mapped[list["DocumentVersion"]] = relationship(
-        back_populates="document", order_by="DocumentVersion.version"
+        back_populates="document",
+        order_by="DocumentVersion.version",
+        # 資料を削除したら版も消す。チャンクは DB の ON DELETE CASCADE で消える
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     @property
     def latest_version(self) -> "DocumentVersion":
         """取り込みの対象になる最新の版。"""
         return next(v for v in self.versions if v.version == self.current_version)
+
+    @property
+    def visibility(self) -> dict:
+        if self.visibility_type == "all":
+            return {"type": "all"}
+        return {"type": "departments", "departments": list(self.visible_departments)}
+
+    def to_dict(self, chunk_count: int = 0, with_versions: bool = False) -> dict:
+        """API のレスポンス形式（docs/api-spec.md の Document）に変換する。
+
+        Args:
+            chunk_count: 検索できるチャンクの数。一覧で 1 件ずつ数えないよう、
+                呼び出し側でまとめて数える。
+            with_versions: 版の履歴を含めるか。
+        """
+        version = self.latest_version
+        data = {
+            "id": str(self.id),
+            "title": self.title,
+            "fileName": version.file_name,
+            "fileType": version.file_type,
+            "size": version.size,
+            "pages": version.pages,
+            "category": self.category,
+            "department": self.department,
+            "visibility": self.visibility,
+            "tags": list(self.tags),
+            "status": self.status,
+            "processingStage": self.processing_stage,
+            "errorMessage": self.error_message,
+            "chunks": chunk_count,
+            "version": self.current_version,
+            "effectiveDate": version.effective_date.isoformat() if version.effective_date else None,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+            "uploadedBy": version.uploaded_by.name if version.uploaded_by else None,
+        }
+        if with_versions:
+            data["versions"] = [v.to_dict() for v in reversed(self.versions)]
+        return data
 
 
 class DocumentVersion(db.Model):
@@ -107,6 +150,16 @@ class DocumentVersion(db.Model):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     document: Mapped[Document] = relationship(back_populates="versions")
+    uploaded_by: Mapped["User | None"] = relationship()  # noqa: F821  文字列で参照する
+
+    def to_dict(self) -> dict:
+        """版の履歴の 1 件（docs/api-spec.md の Document.versions）。"""
+        return {
+            "version": self.version,
+            "updatedAt": self.created_at.isoformat() if self.created_at else None,
+            "by": self.uploaded_by.name if self.uploaded_by else None,
+            "note": self.note or ("初回登録" if self.version == 1 else None),
+        }
 
 
 class DocumentChunk(db.Model):
