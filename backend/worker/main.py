@@ -4,6 +4,8 @@ import logging
 import time
 
 from app import create_app
+from app.extensions import db
+from app.ingestion.pipeline import ingest_next
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [worker] %(message)s")
 log = logging.getLogger(__name__)
@@ -12,8 +14,10 @@ POLL_INTERVAL_SEC = 5
 
 
 def run_once() -> None:
-    # TODO: 取り込み待ちの資料を処理する（テキスト抽出→チャンク分割→ベクトル化）
-    pass
+    """待っている処理をすべて行う。"""
+    # 取り込み待ちの資料がなくなるまで続ける（まとめてアップロードされたときに待たせないため）
+    while ingest_next():
+        pass
 
 
 def main() -> None:
@@ -21,7 +25,13 @@ def main() -> None:
     log.info("started")
     with app.app_context():
         while True:
-            run_once()
+            try:
+                run_once()
+            except Exception:
+                # DB に一時的につながらないときなどに worker ごと止まらないよう、
+                # 記録して次回やり直す
+                log.exception("処理に失敗しました")
+                db.session.rollback()
             time.sleep(POLL_INTERVAL_SEC)
 
 

@@ -12,6 +12,8 @@ dependencies = [
     "argon2-cffi>=25.1",
     "boto3>=1.40",
     "openai>=1.100",
+    "pypdf==6.21.2",
+    "python-docx>=1.2.0",
 ]
 
 [dependency-groups]

@@ -43,14 +43,53 @@
 
 ## 資料の取り込み（worker）
 ```
-アップロード → S3 に原本を保存
-   → テキスト抽出 → チャンク分割 → ベクトル化（OpenAI）→ pgvector に保存
-   → 検索可能になる
+登録（資料管理画面 / 開発用の flask import-document）
+   → 原本を保存（AWS: S3 / 開発: documents ボリュームの /data/documents）
+   → documents・document_versions に登録（status=processing, processing_stage=uploaded）
+
+worker（5 秒ごとに DB を確認。取り込み待ちがなくなるまで続けて処理する）
+   → extracting: テキスト抽出
+   → chunking  : チャンク分割
+   → embedding : ベクトル化（OpenAI）
+   → document_chunks に保存 → status=indexed（失敗したら status=error と理由）
 ```
-- まず PDF・Word・テキストに対応する。Excel・PowerPoint はその後
-- 読み取れない資料はエラーの理由を表示し、取り込み直せるようにする
-- 資料ごとに公開範囲（全員 / 部署限定）を持ち、検索のときに絞り込む
-- 改定した場合は新しい版で検索する（古い版は履歴として残す）
+| 項目 | 決めたこと |
+|---|---|
+| 対応形式 | PDF（pypdf）・Word（.docx、python-docx）・テキスト（.txt・.md）。Excel・PowerPoint はその後 |
+| 埋め込みモデル | **text-embedding-3-large・3072 次元**。pgvector の `vector` 型は 2000 次元までしか HNSW 索引を作れないため、半精度の **`halfvec(3072)`** で保存する（検索の精度はほぼ変わらない） |
+| ベクトル化する文 | 「資料名 + 見出し + 本文」。「第18条」だけでは何の資料か分からないため |
+| チャンクの分け方 | **見出し + 文字数**。「第○章」「第○条」「3.2 」「3. 」「# 」「【】」などの見出しで分け、800 字を超える部分は文の区切りで分ける（前のチャンクと 100 字重ねる）。本文のない見出し（「第3章」の直後に「第18条」など）は次の見出しとまとめる。Word の見出しスタイルも使う |
+| 表記の揺れ | 見出しの判定は、全角英数字を半角にしてから行う（NFKC）。PDF から取り出した文字は全角・半角が混ざりやすいため。保存する本文は元の表記のまま |
+| worker への伝え方 | DB の `documents.status` を見に行く。`SELECT … FOR UPDATE SKIP LOCKED` で、worker が複数あっても二重に処理しない |
+| 止まった処理 | 取り込みを始めてから 30 分たっても終わらない資料は、worker が止まったとみなして取り込み直す |
+| 版 | 改定したら新しい版を追加する。取り込みが終わったら古い版のチャンクは削除する（版の情報と原本は履歴として残る）。取り込み中に新しい版が登録されたら、古い版の結果は保存しない |
+| 読み取れない資料 | 画像だけの PDF・パスワード付き PDF・壊れたファイルは status=error にし、理由を `error_message` に保存する（reindex で取り込み直せる） |
+
+### テーブル
+| テーブル | 内容 |
+|---|---|
+| `documents` | 資料。公開範囲（`visibility_type`: all / departments、`visible_departments`）、取り込みの状態、最新の版の番号 |
+| `document_versions` | 版。原本のファイル名・形式・サイズ・ページ数・保存先のキー（ランダムな名前）・施行日 |
+| `document_chunks` | チャンク。本文・見出し（`section`）・ページ・ベクトル（`halfvec(3072)`、HNSW 索引・コサイン距離） |
+
+### コード
+| 場所 | 内容 |
+|---|---|
+| `backend/app/ingestion/registration.py` | 資料の登録（原本の保存と取り込み待ちへの登録） |
+| `backend/app/ingestion/extract.py` | テキスト抽出 |
+| `backend/app/ingestion/chunking.py` | チャンク分割 |
+| `backend/app/ingestion/pipeline.py` | worker が行う取り込みの流れ |
+| `backend/app/ai/embedding.py` | ベクトル化（取り込みと検索の両方で使う） |
+| `backend/app/storage.py` | 原本の保存先（`DOCUMENTS_BUCKET` があれば S3、なければ `DOCUMENTS_DIR`） |
+
+### 開発環境で試す
+```sh
+# ダミーの資料を登録する（パスは api コンテナの /app = backend/ から見た位置。本物の社内資料は登録しない。OpenAI API に送られるため）
+docker compose exec api flask import-document dummy/kyuka_kitei.txt --department 人事部 --category 人事手続き
+# 部署限定にする場合
+docker compose exec api flask import-document dummy/jinji_only.md --department 人事部 --visible-department 人事部
+```
+worker が数秒以内に取り込む。`.env` に `OPENAI_API_KEY` が必要。
 
 ## 目標値（計画書より・案）
 | 項目 | 目標 |
@@ -67,9 +106,7 @@
 ## 未定の項目
 | 項目 | 検討すること |
 |---|---|
-| 使用するモデル | 回答生成・検索語展開・充足度評価にどのモデルを使うか（性能と料金） |
-| 埋め込みモデルと次元数 | pgvector のカラム定義に影響する。DB 設計の前に決める |
-| チャンクの分割方法 | 文字数・重なり・見出し単位で分けるか |
+| 使用するモデル | 回答生成・検索語展開・充足度評価にどのモデルを使うか（性能と料金）。案: 回答の作成・充足度の評価は性能重視、質問分析・検索語の展開は速さ重視。処理ごとに環境変数で切り替えられるようにする |
 | 検索方式 | ベクトル検索のみか、キーワード検索と組み合わせる（ハイブリッド検索）か |
 | エージェントの実装方法 | ライブラリ（OpenAI Agents SDK、LangGraph など）を使うか、自作するか |
 | 回答のストリーミング方式 | SSE（Server-Sent Events）など。Gunicorn の設定に影響する |

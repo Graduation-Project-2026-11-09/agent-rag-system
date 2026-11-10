@@ -1,12 +1,14 @@
 """flask コマンドに追加する管理用コマンド。"""
 
 import os
+from pathlib import Path
 
 import click
 from flask import Flask
 from sqlalchemy import select
 
 from .extensions import db
+from .ingestion.registration import RegistrationError, register_document
 from .models import User
 from .models.user import ROLES
 
@@ -101,3 +103,43 @@ def register_cli(app: Flask) -> None:
         db.session.add(user)
         db.session.commit()
         click.echo(f"create-user: {email}（{role}）を登録しました")
+
+    @app.cli.command("import-document")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+    @click.option("--title", default=None, help="資料名（省略時はファイル名）")
+    @click.option("--department", required=True, help="資料を管理する部署")
+    @click.option("--category", default=None, help="資料の分類")
+    @click.option(
+        "--visible-department",
+        "visible_departments",
+        multiple=True,
+        help="閲覧できる部署（複数指定可）。省略すると全員が閲覧できる",
+    )
+    @click.option("--tag", "tags", multiple=True, help="タグ（複数指定可）")
+    def import_document(
+        path: Path,
+        title: str | None,
+        department: str,
+        category: str | None,
+        visible_departments: tuple[str, ...],
+        tags: tuple[str, ...],
+    ) -> None:
+        """資料ファイルを登録し、取り込み待ちにする（取り込みは worker が行う）。
+
+        資料管理画面ができるまで、ダミー資料の登録と動作確認に使う。
+        本物の社内資料は登録しないこと（OpenAI API に送られるため）。
+        """
+        try:
+            document = register_document(
+                path.name,
+                path.read_bytes(),
+                title=title or path.stem,
+                department=department,
+                category=category,
+                visibility_type="departments" if visible_departments else "all",
+                visible_departments=visible_departments,
+                tags=tags,
+            )
+        except RegistrationError as e:
+            raise click.ClickException(str(e)) from e
+        click.echo(f"import-document: 「{document.title}」を登録しました（id={document.id}）")
