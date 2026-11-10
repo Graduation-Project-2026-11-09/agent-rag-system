@@ -30,3 +30,6 @@ Thumbs.db
 backend.hcl
 crash.log
 *.tfplan
+
+# 評価の結果（app/evaluation.py）。発表に使うものは report.md を別の場所にコピーする
+backend/evaluation/runs/
