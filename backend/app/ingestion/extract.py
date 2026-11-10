@@ -101,6 +101,7 @@ def extract_text(data: bytes, file_type: str) -> ExtractedText:
 
 
 def _extract_pdf(data: bytes) -> ExtractedText:
+    """PDF を 1 行ずつ、ページ番号つきで取り出す。"""
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(data))
@@ -116,6 +117,7 @@ def _extract_pdf(data: bytes) -> ExtractedText:
 
 
 def _extract_docx(data: bytes) -> ExtractedText:
+    """Word を段落と表の行ごとに、見出しのスタイルつきで取り出す。"""
     from docx import Document
     from docx.table import Table
 
@@ -147,6 +149,7 @@ def _extract_docx(data: bytes) -> ExtractedText:
 
 
 def _decode_text(data: bytes) -> str:
+    """テキストファイルの文字コードを判定して文字列にする。"""
     # Windows で作られたテキストは Shift_JIS（cp932）のことがあるため、UTF-8 で読めなければ試す
     for encoding in ("utf-8-sig", "cp932"):
         try:
@@ -157,6 +160,7 @@ def _decode_text(data: bytes) -> str:
 
 
 def _extract_plain(data: bytes) -> ExtractedText:
+    """テキストを 1 行ずつ取り出す。見出しはチャンク分割のときに書き方から判定する。"""
     lines = _decode_text(data).splitlines()
     return ExtractedText(blocks=[TextBlock(text=line) for line in lines if line.strip()])
 
@@ -166,6 +170,7 @@ _MARKDOWN_TABLE_RULE = re.compile(r"^\|?\s*:?-{3,}")
 
 
 def _extract_markdown(data: bytes) -> ExtractedText:
+    """Markdown を 1 行ずつ取り出し、「#」の行を見出しにする。"""
     # Markdown は「#」で見出しがはっきり分かるため、それ以外の行（「1. 」で始まる手順など）は
     # 見出しにしない
     blocks = []

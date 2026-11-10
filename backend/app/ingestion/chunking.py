@@ -48,6 +48,8 @@ class Chunk:
 
 @dataclass
 class _Section:
+    """1 つの見出しと、その下の行。has_body は見出し以外の行があるか。"""
+
     heading: str | None
     lines: list[str]
     page: int | None
@@ -64,6 +66,7 @@ def normalize_text(text: str) -> str:
 
 
 def _clean_spaces(text: str) -> str:
+    """連続する空白（全角を含む）を 1 つにする。"""
     return re.sub(r"[ \t　]+", " ", text).strip()
 
 
@@ -102,6 +105,7 @@ def split_into_chunks(blocks: list[TextBlock]) -> list[Chunk]:
 
 
 def _group_by_heading(blocks: list[TextBlock]) -> list[_Section]:
+    """行を見出しごとのまとまりに分ける。"""
     sections: list[_Section] = []
     current = _Section(heading=None, lines=[], page=None)
 
@@ -134,6 +138,7 @@ def _group_by_heading(blocks: list[TextBlock]) -> list[_Section]:
 
 
 def _split_long_text(text: str) -> list[str]:
+    """MAX_CHUNK_CHARS を超える文を、文の区切りで重なりをつけて分ける。"""
     if len(text) <= MAX_CHUNK_CHARS:
         return [text]
 

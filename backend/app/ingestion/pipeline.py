@@ -18,6 +18,11 @@ log = logging.getLogger(__name__)
 
 # worker が途中で止まった（再起動など）資料を、この時間が過ぎたら取り込み直す
 STALE_AFTER = timedelta(minutes=30)
+# 取り込みを始める回数の上限。資料のせいで worker が毎回止まる場合に、無限に繰り返さないため
+MAX_ATTEMPTS = 3
+TOO_MANY_ATTEMPTS_MESSAGE = (
+    "取り込みが途中で止まることが続いたため、中止しました。ファイルを確認して取り込み直してください"
+)
 UNEXPECTED_ERROR_MESSAGE = "取り込み中に予期しないエラーが発生しました。取り込み直してください"
 
 
@@ -62,25 +67,41 @@ def ingest_next() -> bool:
 
 
 def _claim_next_job() -> _Job | None:
-    stale_before = datetime.now(UTC) - STALE_AFTER
-    # worker が複数あっても同じ資料を二重に処理しないよう、ロック中の行は飛ばす
-    document = db.session.scalar(
-        select(Document)
-        .where(
-            Document.status == "processing",
-            or_(
-                Document.processing_stage == "uploaded",
-                Document.processing_started_at < stale_before,
-            ),
-        )
-        .order_by(Document.updated_at)
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    )
-    if document is None:
-        db.session.rollback()
-        return None
+    """取り込み待ちの資料を 1 件選び、処理中にする。
 
+    途中で止まった資料が取り込みの回数の上限に達していたら、error にして次の資料を探す。
+
+    Returns:
+        取り込む資料の情報。取り込み待ちがなければ None。
+    """
+    while True:
+        stale_before = datetime.now(UTC) - STALE_AFTER
+        # worker が複数あっても同じ資料を二重に処理しないよう、ロック中の行は飛ばす
+        document = db.session.scalar(
+            select(Document)
+            .where(
+                Document.status == "processing",
+                or_(
+                    Document.processing_stage == "uploaded",
+                    Document.processing_started_at < stale_before,
+                ),
+            )
+            .order_by(Document.updated_at)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        if document is None:
+            db.session.rollback()
+            return None
+        if document.processing_attempts < MAX_ATTEMPTS:
+            return _start(document)
+        log.warning("document %s: %s", document.id, TOO_MANY_ATTEMPTS_MESSAGE)
+        _reset_processing(document, status="error", error_message=TOO_MANY_ATTEMPTS_MESSAGE)
+        db.session.commit()
+
+
+def _start(document: Document) -> _Job:
+    """ロックした資料を処理中にし、取り込みに必要な値を取り出す。"""
     version = document.latest_version
     job = _Job(
         document_id=document.id,
@@ -92,12 +113,23 @@ def _claim_next_job() -> _Job | None:
     )
     document.processing_stage = "extracting"
     document.processing_started_at = datetime.now(UTC)
+    document.processing_attempts += 1
     document.error_message = None
     db.session.commit()
     return job
 
 
+def _reset_processing(document: Document, status: str, error_message: str | None) -> None:
+    """取り込みを終えた状態にする。回数も戻し、次に取り込み直すときは 1 回目から数える。"""
+    document.status = status
+    document.processing_stage = None
+    document.processing_started_at = None
+    document.processing_attempts = 0
+    document.error_message = error_message
+
+
 def _process(job: _Job) -> None:
+    """テキスト抽出 → チャンク分割 → ベクトル化 → 保存 を順に行う。"""
     data = get_storage().load(job.storage_key)
     extracted = extract_text(data, job.file_type)
     db.session.execute(
@@ -123,12 +155,14 @@ def _process(job: _Job) -> None:
 
 
 def _embedding_input(title: str, chunk: Chunk) -> str:
+    """ベクトルにする文（資料名 + 見出し + 本文）を作る。"""
     # 「第18条」だけでは何の資料か分からないため、資料名と見出しを付けてからベクトルにする
     header = f"{title}\n{chunk.section}" if chunk.section else title
     return f"{header}\n{chunk.content}"
 
 
 def _set_stage(job: _Job, stage: str) -> None:
+    """画面に表示する取り込みの段階を進める（取り込み中に版が変わっていたら何もしない）。"""
     db.session.execute(
         update(Document)
         .where(Document.id == job.document_id, Document.current_version == job.version)
@@ -138,6 +172,7 @@ def _set_stage(job: _Job, stage: str) -> None:
 
 
 def _save_chunks(job: _Job, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+    """チャンクを保存して検索できる状態にする。古い版のチャンクは置き換える。"""
     document = db.session.get(Document, job.document_id, with_for_update=True)
     if document is None or document.current_version != job.version:
         # 取り込み中に資料が削除された、または新しい版が登録された。新しい版は次に処理する
@@ -159,22 +194,13 @@ def _save_chunks(job: _Job, chunks: list[Chunk], vectors: list[list[float]]) -> 
         )
         for index, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True))
     )
-    document.status = "indexed"
-    document.processing_stage = None
-    document.processing_started_at = None
-    document.error_message = None
+    _reset_processing(document, status="indexed", error_message=None)
     db.session.commit()
 
 
 def _mark_error(job: _Job, message: str) -> None:
-    db.session.execute(
-        update(Document)
-        .where(Document.id == job.document_id, Document.current_version == job.version)
-        .values(
-            status="error",
-            processing_stage=None,
-            processing_started_at=None,
-            error_message=message,
-        )
-    )
+    """取り込みの失敗を記録する。worker は error の資料を自動では取り込み直さない。"""
+    document = db.session.get(Document, job.document_id)
+    if document is not None and document.current_version == job.version:
+        _reset_processing(document, status="error", error_message=message)
     db.session.commit()

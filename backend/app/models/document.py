@@ -39,6 +39,8 @@ class Document(db.Model):
         status: processing（取り込み中）/ indexed（検索可能）/ error（取り込み失敗）。
         processing_stage: processing 中の段階。processing 以外は None。
         processing_started_at: worker が取り込みを始めた日時。止まった処理の検知に使う。
+        processing_attempts: 今回の取り込みを始めた回数。worker が途中で止まって
+            取り込み直すたびに増え、上限を超えたら error にする。
         current_version: 最新の版の番号。
     """
 
@@ -60,6 +62,7 @@ class Document(db.Model):
     status: Mapped[str] = mapped_column(String(16), default="processing", index=True)
     processing_stage: Mapped[str | None] = mapped_column(String(16))
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(Text)
     current_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
