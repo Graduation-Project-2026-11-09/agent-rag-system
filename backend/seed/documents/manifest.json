@@ -1,0 +1,28 @@
+{
+  "_comment": "ダミー資料の一覧。source/<slug>.md を元に build_documents.py が files/ に各形式のファイルを作る。内容はすべて架空（株式会社サンプル）",
+  "documents": [
+    {"slug": "shugyo_kisoku", "format": "pdf", "title": "就業規則", "department": "人事部", "category": "就業規則・規程", "visibleDepartments": null, "tags": ["休暇", "勤務", "兼業"], "effectiveDate": "2026-04-01"},
+    {"slug": "ikuji_kaigo_kitei", "format": "pdf", "title": "育児・介護休業規程", "department": "人事部", "category": "就業規則・規程", "visibleDepartments": null, "tags": ["育休", "産休", "介護", "時短勤務"], "effectiveDate": "2025-10-01"},
+    {"slug": "jinji_tetsuzuki_manual", "format": "docx", "title": "人事手続きマニュアル（氏名・住所・家族の変更）", "department": "人事部", "category": "人事手続き", "visibleDepartments": null, "tags": ["氏名変更", "住所変更", "扶養", "年末調整"], "effectiveDate": "2026-07-01"},
+    {"slug": "shakai_hoken_guide", "format": "pdf", "title": "社会保険・扶養手続きガイド", "department": "人事部", "category": "社会保険・福利厚生", "visibleDepartments": null, "tags": ["健康保険", "扶養", "年金"], "effectiveDate": "2026-04-01"},
+    {"slug": "hyoka_manual", "format": "docx", "title": "人事評価運用マニュアル（評価者向け）", "department": "人事部", "category": "人事手続き", "visibleDepartments": ["人事部"], "tags": ["評価"], "effectiveDate": "2026-04-01"},
+    {"slug": "onboarding_guide", "format": "md", "title": "新入社員オンボーディングガイド", "department": "人事部", "category": "人事手続き", "visibleDepartments": null, "tags": ["入社", "研修"], "effectiveDate": "2026-04-01"},
+    {"slug": "nenmatsu_chosei_2026", "format": "txt", "title": "2026年 年末調整の手引き", "department": "人事部", "category": "人事手続き", "visibleDepartments": null, "tags": ["年末調整", "控除"], "effectiveDate": "2026-10-01"},
+    {"slug": "keicho_mimaikin", "format": "pdf", "title": "慶弔見舞金規程", "department": "総務部", "category": "社会保険・福利厚生", "visibleDepartments": null, "tags": ["結婚", "出産", "弔事"], "effectiveDate": "2025-04-01"},
+    {"slug": "office_guide", "format": "docx", "title": "オフィス利用・来客対応ガイド", "department": "総務部", "category": "総務・施設", "visibleDepartments": null, "tags": ["会議室", "来客"], "effectiveDate": "2025-07-01"},
+    {"slug": "remote_work", "format": "pdf_scanned", "title": "リモートワーク規程", "department": "総務部", "category": "就業規則・規程", "visibleDepartments": null, "tags": ["在宅勤務"], "effectiveDate": "2026-10-01"},
+    {"slug": "bihin_meishi", "format": "md", "title": "備品・名刺の申請手順", "department": "総務部", "category": "総務・施設", "visibleDepartments": null, "tags": ["備品", "名刺"], "effectiveDate": "2026-01-01"},
+    {"slug": "bousai_manual", "format": "pdf", "title": "防災・緊急時対応マニュアル", "department": "総務部", "category": "総務・施設", "visibleDepartments": null, "tags": ["防災", "地震", "安否確認"], "effectiveDate": "2025-09-01"},
+    {"slug": "tsukin_teate", "format": "pdf", "title": "通勤手当規程", "department": "経理部", "category": "経費・経理", "visibleDepartments": null, "tags": ["通勤", "手当"], "effectiveDate": "2025-10-01"},
+    {"slug": "keihi_seisan_manual", "format": "docx", "title": "経費精算マニュアル", "department": "経理部", "category": "経費・経理", "visibleDepartments": null, "tags": ["経費", "領収書", "出張"], "effectiveDate": "2026-04-01"},
+    {"slug": "shiharai_tetsuzuki", "format": "md", "title": "請求書・支払処理の手順（経理部内）", "department": "経理部", "category": "経費・経理", "visibleDepartments": ["経理部"], "tags": ["請求書", "支払"], "effectiveDate": "2026-04-01"},
+    {"slug": "corporate_card", "format": "txt", "title": "法人カード利用ガイド", "department": "経理部", "category": "経費・経理", "visibleDepartments": ["営業部", "経理部"], "tags": ["法人カード", "接待"], "effectiveDate": "2026-04-01"},
+    {"slug": "security_policy", "format": "pdf", "title": "情報セキュリティポリシー", "department": "情報システム部", "category": "IT・セキュリティ", "visibleDepartments": null, "tags": ["セキュリティ", "パスワード"], "effectiveDate": "2026-01-01"},
+    {"slug": "pc_account_guide", "format": "docx", "title": "PC・アカウント利用ガイド", "department": "情報システム部", "category": "IT・セキュリティ", "visibleDepartments": null, "tags": ["PC", "パスワード", "スマートフォン"], "effectiveDate": "2026-08-01"},
+    {"slug": "vpn_manual", "format": "md", "title": "VPN・リモート接続マニュアル", "department": "情報システム部", "category": "IT・セキュリティ", "visibleDepartments": null, "tags": ["VPN", "在宅勤務"], "effectiveDate": "2026-08-01"},
+    {"slug": "server_unyo", "format": "md", "title": "サーバー運用手順書（情報システム部内）", "department": "情報システム部", "category": "IT・セキュリティ", "visibleDepartments": ["情報システム部"], "tags": ["サーバー", "障害対応"], "effectiveDate": "2026-06-01"},
+    {"slug": "eigyo_houmon_rule", "format": "docx", "title": "営業部 顧客訪問・接待ルール", "department": "営業部", "category": "経費・経理", "visibleDepartments": ["営業部"], "tags": ["接待", "顧客訪問"], "effectiveDate": "2026-04-01"},
+    {"slug": "dev_git_guideline", "format": "md", "title": "開発部 ソースコード管理ガイドライン", "department": "開発部", "category": "IT・セキュリティ", "visibleDepartments": ["開発部"], "tags": ["Git", "レビュー"], "effectiveDate": "2026-05-01"},
+    {"slug": "sns_guideline", "format": "pdf", "title": "SNS 利用ガイドライン", "department": "マーケティング部", "category": "IT・セキュリティ", "visibleDepartments": null, "tags": ["SNS", "広報"], "effectiveDate": "2026-02-01"}
+  ]
+}

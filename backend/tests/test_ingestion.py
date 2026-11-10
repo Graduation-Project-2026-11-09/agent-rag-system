@@ -247,3 +247,20 @@ def test_attempts_are_counted_and_reset_after_success(app, fake_embed):
     document_id = _register().id
     ingest_next()
     assert db.session.get(Document, document_id).processing_attempts == 0
+
+
+def test_seed_documents_command(app):
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["seed-documents"])
+
+    assert result.exit_code == 0, result.output
+    documents = db.session.scalars(select(Document)).all()
+    assert len(documents) == 23
+    hyoka = next(d for d in documents if d.title.startswith("人事評価"))
+    assert hyoka.visibility_type == "departments"
+    assert hyoka.visible_departments == ["人事部"]
+    assert {d.latest_version.file_type for d in documents} == {"pdf", "docx", "txt", "md"}
+
+    # 2 回目は登録済みの資料を飛ばす
+    result = runner.invoke(args=["seed-documents"])
+    assert "0 件登録しました" in result.output

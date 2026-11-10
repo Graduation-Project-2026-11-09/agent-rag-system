@@ -84,12 +84,43 @@ worker（5 秒ごとに DB を確認。取り込み待ちがなくなるまで�
 
 ### 開発環境で試す
 ```sh
-# ダミーの資料を登録する（パスは api コンテナの /app = backend/ から見た位置。本物の社内資料は登録しない。OpenAI API に送られるため）
-docker compose exec api flask import-document dummy/kyuka_kitei.txt --department 人事部 --category 人事手続き
+# ダミー資料 23 件をまとめて登録する（登録済みの資料は飛ばす）。worker が数秒〜数分で取り込む
+docker compose exec api flask seed-documents
+# 1 件だけ登録する（パスは api コンテナの /app = backend/ から見た位置）
+docker compose exec api flask import-document seed/documents/files/vpn_manual.md --department 情報システム部
 # 部署限定にする場合
-docker compose exec api flask import-document dummy/jinji_only.md --department 人事部 --visible-department 人事部
+docker compose exec api flask import-document <ファイル> --department 人事部 --visible-department 人事部
 ```
-worker が数秒以内に取り込む。`.env` に `OPENAI_API_KEY` が必要。
+`.env` に `OPENAI_API_KEY` が必要（設定したら `docker compose up -d` で worker を作り直す）。本物の社内資料は登録しない（OpenAI API に送られるため）。
+
+### ダミー資料（`backend/seed/documents/`）
+架空の会社「株式会社サンプル」の規程・マニュアル 23 件。画面のモック（`frontend/src/mocks/db.js`）と資料名・部署・公開範囲・見出しをそろえている。
+| 内容 | 件数 |
+|---|---|
+| 部署 | 人事部 7・総務部 5・経理部 4・情報システム部 4・営業部 1・開発部 1・マーケティング部 1 |
+| 形式 | PDF 9（うち 1 件は文字のない画像だけの PDF で、取り込みに失敗する例）・Word 6・Markdown 6・テキスト 2 |
+| 公開範囲 | 全員 17・部署限定 6 |
+
+- 内容は `source/*.md` に書き、`seed/build_documents.py` で各形式のファイル（`files/`）を作る。資料を直したら作り直してコミットする
+  ```sh
+  docker compose run --rm --no-deps api uv run --with reportlab==5.1.0 python seed/build_documents.py
+  ```
+- 資料の一覧（部署・公開範囲・タグ）は `manifest.json`
+- テキストの資料は見出しの記号がなく、書き方（「1. 」「第1条」など）から見出しを判定する。Markdown は `#` の行だけを見出しにする
+- 分かっている制約: PDF の表は、1 セルが 1 行に分かれて取り出される（行と列の対応が失われる）
+
+### 評価用の質問セット（`backend/evaluation/questions.json`）
+ダミー資料に対する 48 問。質問ごとに、質問者の部署・権限、正解の根拠（資料名と見出し）、回答に含めるべき点、問い合わせを提案すべき部署を持つ。
+| 種類 | 内容 |
+|---|---|
+| single | 1つの資料の1か所で答えられる |
+| multi | 複数の資料を組み合わせる（例: 結婚したときの手続き） |
+| paraphrase | 利用者の言葉と資料の言葉が違う（例: 「引っ越した」→ 住所変更） |
+| not_in_documents | 資料に答えがない。推測せず問い合わせを提案するのが正解 |
+| restricted | 質問者が閲覧できない資料にしか答えがない。引用してはいけない |
+| unreadable | 取り込みに失敗した資料にしか答えがない |
+
+`tests/test_seed_data.py` で、正解の見出しが実際のチャンクに存在すること、質問者がその資料を閲覧できることを確認している。
 
 ## 目標値（計画書より・案）
 | 項目 | 目標 |
