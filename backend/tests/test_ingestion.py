@@ -264,3 +264,37 @@ def test_seed_documents_command(app):
     # 2 回目は登録済みの資料を飛ばす
     result = runner.invoke(args=["seed-documents"])
     assert "0 件登録しました" in result.output
+
+
+def test_old_worker_cannot_overwrite_after_retry(app, fake_embed):
+    document_id = _register().id
+    old_job = pipeline._claim_next_job()
+    # 古い worker が遅く、止まったと判定されて別の worker が取り込み直した状態
+    document = db.session.get(Document, document_id)
+    document.processing_started_at = datetime.now(UTC) - timedelta(hours=1)
+    db.session.commit()
+    new_job = pipeline._claim_next_job()
+    assert new_job.attempt == old_job.attempt + 1
+
+    pipeline._save_chunks(old_job, [], [])
+    pipeline._mark_error(old_job, "古い worker のエラー")
+
+    document = db.session.get(Document, document_id)
+    assert document.status == "processing"
+    assert document.error_message is None
+
+
+def test_cleanup_failure_does_not_hide_original_error(app, monkeypatch):
+    storage = get_storage()
+    monkeypatch.setattr("app.ingestion.registration.get_storage", lambda: storage)
+
+    def fail_delete(key):
+        raise OSError("ストレージにも接続できません")
+
+    def fail_commit():
+        raise RuntimeError("DB に接続できません")
+
+    monkeypatch.setattr(storage, "delete", fail_delete)
+    monkeypatch.setattr(db.session, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="DB に接続できません"):
+        _register()
