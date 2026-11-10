@@ -1,6 +1,8 @@
 """flask コマンドに追加する管理用コマンド。"""
 
+import json
 import os
+from datetime import date
 from pathlib import Path
 
 import click
@@ -9,8 +11,11 @@ from sqlalchemy import select
 
 from .extensions import db
 from .ingestion.registration import RegistrationError, register_document
-from .models import User
+from .models import Document, User
 from .models.user import ROLES
+
+# ダミー資料（架空の会社の規程・マニュアル）。seed/build_documents.py で各形式のファイルを作る
+SEED_DOCUMENTS_DIR = Path(__file__).resolve().parent.parent / "seed" / "documents"
 
 # モックアップ（frontend/src/mocks/db.js）と同じダミーの利用者。開発・stg の動作確認に使う
 SEED_USERS = [
@@ -143,3 +148,56 @@ def register_cli(app: Flask) -> None:
         except RegistrationError as e:
             raise click.ClickException(str(e)) from e
         click.echo(f"import-document: 「{document.title}」を登録しました（id={document.id}）")
+
+    @app.cli.command("seed-documents")
+    @click.option(
+        "--dir",
+        "seed_dir",
+        type=click.Path(exists=True, file_okay=False, path_type=Path),
+        default=SEED_DOCUMENTS_DIR,
+        show_default=True,
+        help="manifest.json と files/ があるフォルダ",
+    )
+    def seed_documents(seed_dir: Path) -> None:
+        """ダミー資料をまとめて登録し、取り込み待ちにする（取り込みは worker が行う）。
+
+        同じ資料名の資料が登録済みなら何もしない。登録者は、資料を管理する部署の担当者にする。
+        """
+        manifest = json.loads((seed_dir / "manifest.json").read_text(encoding="utf-8"))
+        created = 0
+        for entry in manifest["documents"]:
+            if db.session.scalar(select(Document).where(Document.title == entry["title"])):
+                continue
+            files = list((seed_dir / "files").glob(f"{entry['slug']}.*"))
+            if len(files) != 1:
+                raise click.ClickException(
+                    f"{entry['slug']} のファイルが見つかりません（seed/build_documents.py で作成）"
+                )
+            uploader = db.session.scalar(
+                select(User).where(
+                    User.role.in_(("staff", "admin")),
+                    User.handles_department == entry["department"],
+                )
+            )
+            visible_departments = entry.get("visibleDepartments") or []
+            try:
+                register_document(
+                    files[0].name,
+                    files[0].read_bytes(),
+                    title=entry["title"],
+                    department=entry["department"],
+                    category=entry.get("category"),
+                    visibility_type="departments" if visible_departments else "all",
+                    visible_departments=visible_departments,
+                    tags=entry.get("tags", []),
+                    effective_date=(
+                        date.fromisoformat(entry["effectiveDate"])
+                        if entry.get("effectiveDate")
+                        else None
+                    ),
+                    uploaded_by=uploader,
+                )
+            except RegistrationError as e:
+                raise click.ClickException(f"{entry['slug']}: {e}") from e
+            created += 1
+        click.echo(f"seed-documents: {created} 件登録しました（取り込みは worker が行います）")
