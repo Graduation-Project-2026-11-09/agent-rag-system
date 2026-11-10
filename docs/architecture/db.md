@@ -635,12 +635,16 @@ DB 設計に合わせて、画面を作るときに次を直す。
 
 ログイン機能で先に作った `users` は、部署を文字列で持っている。部署の機能を作るときに次のマイグレーションを行う。
 
-1. `departments` を作り、初期データを入れる
-2. `users.department`（文字列）→ `department_id`、`handles_department` → `handles_department_id` に移す
+1. `departments` を作り、初期データを入れる。あわせて、既存の `users.department`・`users.handles_department` に入っている部署名のうち、初期データにないものもすべて `departments` に登録する（既存の利用者の所属部署を変えずに、必須の外部キーを満たすため）
+2. `department_id`・`handles_department_id` を NULL を許す列として追加し、部署名で `departments` と突き合わせて ID を入れる。`department_id` に NULL が残っていないことを確かめてから NOT NULL にし、文字列の `department`・`handles_department` を削除する
 3. `must_change_password`・`password_changed_at`・`updated_at`・`deleted_at` を追加する
 4. `email`・`employee_id` の一意制約を部分一意インデックスに変える（自動生成は部分インデックスの変更を正しく検出しないので、マイグレーションを手で確認する）
-5. role と担当部署の CHECK、`email = lower(email)` の CHECK を追加する
-6. API のレスポンス（`department` に部署名を返す）は変えない
+5. CHECK を追加する前に、既存のデータが条件を満たすようにする
+   - `role = 'staff'` で `handles_department_id` が NULL の利用者を確認し、担当部署を設定する（担当部署が分からない場合は所属部署を入れ、マイグレーションの後に管理者が確認する）
+   - `role = 'user'` で `handles_department_id` が入っている利用者は NULL にする
+   - `email` を小文字にそろえる（小文字にすると重複する行がないかも確かめる）
+6. role と担当部署の CHECK、`email = lower(email)` の CHECK を追加する
+7. API のレスポンス（`department` に部署名を返す）は変えない
 
 ## 9. 容量の見積もり
 
