@@ -1,5 +1,6 @@
 """資料の登録。原本を保存して取り込み待ちにする（取り込み自体は worker が行う）。"""
 
+import logging
 import uuid
 from collections.abc import Sequence
 from datetime import date
@@ -17,6 +18,9 @@ MAX_FILE_NAME_CHARS = 255
 MAX_TAG_CHARS = 50
 # document_versions.size は Integer（32 ビット）のため
 MAX_FILE_SIZE = 2**31 - 1
+
+
+log = logging.getLogger(__name__)
 
 
 class RegistrationError(Exception):
@@ -127,6 +131,10 @@ def register_document(
     except Exception:
         # DB に登録できなかったときは、どの資料にも属さない原本が残らないよう消す
         db.session.rollback()
-        storage.delete(storage_key)
+        try:
+            storage.delete(storage_key)
+        except Exception:
+            # 後始末の失敗で、元のエラー（DB に登録できなかった理由）が隠れないようにする
+            log.exception("原本 %s を削除できませんでした", storage_key)
         raise
     return document

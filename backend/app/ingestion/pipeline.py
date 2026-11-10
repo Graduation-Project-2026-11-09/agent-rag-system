@@ -30,6 +30,10 @@ UNEXPECTED_ERROR_MESSAGE = "取り込み中に予期しないエラーが発生�
 class _Job:
     """取り込む資料の情報。
 
+    attempt は取り込みを始めた回数（processing_attempts）で、どの取り込みかの目印にする。
+    遅い worker が「止まった」と判定され、別の worker が取り込み直したとき、
+    古い worker が結果を上書きしないよう、保存のときに今の回数と一致するか確かめる。
+
     DB のトランザクションを開いたまま OpenAI API を待つと、
     idle_in_transaction_session_timeout（60 秒）で接続が切られるため、
     必要な値を先に取り出してから重い処理をする。
@@ -38,6 +42,7 @@ class _Job:
     document_id: int
     version_id: int
     version: int
+    attempt: int
     title: str
     storage_key: str
     file_type: str
@@ -107,6 +112,7 @@ def _start(document: Document) -> _Job:
         document_id=document.id,
         version_id=version.id,
         version=version.version,
+        attempt=0,  # 下で処理中にしたあとの回数を入れる
         title=document.title,
         storage_key=version.storage_key,
         file_type=version.file_type,
@@ -115,6 +121,7 @@ def _start(document: Document) -> _Job:
     document.processing_started_at = datetime.now(UTC)
     document.processing_attempts += 1
     document.error_message = None
+    job.attempt = document.processing_attempts
     db.session.commit()
     return job
 
@@ -163,21 +170,18 @@ def _embedding_input(title: str, chunk: Chunk) -> str:
 
 def _set_stage(job: _Job, stage: str) -> None:
     """画面に表示する取り込みの段階を進める（取り込み中に版が変わっていたら何もしない）。"""
-    db.session.execute(
-        update(Document)
-        .where(Document.id == job.document_id, Document.current_version == job.version)
-        .values(processing_stage=stage)
-    )
+    db.session.execute(update(Document).where(*_owned_by(job)).values(processing_stage=stage))
     db.session.commit()
 
 
 def _save_chunks(job: _Job, chunks: list[Chunk], vectors: list[list[float]]) -> None:
     """チャンクを保存して検索できる状態にする。古い版のチャンクは置き換える。"""
-    document = db.session.get(Document, job.document_id, with_for_update=True)
-    if document is None or document.current_version != job.version:
-        # 取り込み中に資料が削除された、または新しい版が登録された。新しい版は次に処理する
+    document = db.session.scalar(select(Document).where(*_owned_by(job)).with_for_update())
+    if document is None:
+        # 取り込み中に資料が削除された、新しい版が登録された、
+        # または別の worker が取り込み直している。どれもこの結果は使わない
         db.session.rollback()
-        log.info("document %s: 版が変わったため、取り込み結果を保存しません", job.document_id)
+        log.info("document %s: 取り込みの対象が変わったため、結果を保存しません", job.document_id)
         return
 
     # 古い版のチャンクは検索に使わないため削除する（版の情報と原本は履歴として残る）
@@ -200,7 +204,17 @@ def _save_chunks(job: _Job, chunks: list[Chunk], vectors: list[list[float]]) -> 
 
 def _mark_error(job: _Job, message: str) -> None:
     """取り込みの失敗を記録する。worker は error の資料を自動では取り込み直さない。"""
-    document = db.session.get(Document, job.document_id)
-    if document is not None and document.current_version == job.version:
+    document = db.session.scalar(select(Document).where(*_owned_by(job)))
+    if document is not None:
         _reset_processing(document, status="error", error_message=message)
     db.session.commit()
+
+
+def _owned_by(job: _Job) -> tuple:
+    """この取り込みが、まだ資料の今の取り込みであることの条件。"""
+    return (
+        Document.id == job.document_id,
+        Document.current_version == job.version,
+        Document.status == "processing",
+        Document.processing_attempts == job.attempt,
+    )
