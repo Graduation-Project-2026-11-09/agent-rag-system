@@ -32,6 +32,14 @@ class Config:
         },
     }
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+    # 次元数は DB のカラム定義（models/document.py）に合わせる必要があるため、
+    # 3072 次元を返す text-embedding-3-large 以外に変えるときはマイグレーションも必要
+    AI_EMBEDDING_MODEL = os.environ.get("AI_EMBEDDING_MODEL", "text-embedding-3-large")
+
+    # 資料の原本の保存先。DOCUMENTS_BUCKET があれば S3（AWS）、なければ DOCUMENTS_DIR（開発）
+    DOCUMENTS_BUCKET = os.environ.get("DOCUMENTS_BUCKET", "")
+    DOCUMENTS_DIR = os.environ.get("DOCUMENTS_DIR", "/data/documents")
+    AWS_REGION = os.environ.get("AWS_REGION", "")
     MAIL_HOST = os.environ.get("MAIL_HOST", "localhost")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "1025"))
 

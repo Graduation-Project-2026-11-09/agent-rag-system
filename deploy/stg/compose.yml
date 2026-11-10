@@ -29,6 +29,9 @@ services:
   api:
     image: ghcr.io/graduation-project-2026-11-09/agent-rag-api:main
     env_file: .env
+    environment:
+      # S3 のリージョン。deploy.sh を実行する systemd のサービスで設定している
+      AWS_REGION: ${AWS_REGION}
     restart: unless-stopped
     <<: *logging
 
@@ -36,6 +39,8 @@ services:
     image: ghcr.io/graduation-project-2026-11-09/agent-rag-api:main
     command: python -m worker.main
     env_file: .env
+    environment:
+      AWS_REGION: ${AWS_REGION}
     restart: unless-stopped
     <<: *logging
 

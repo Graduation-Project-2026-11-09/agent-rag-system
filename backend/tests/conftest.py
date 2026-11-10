@@ -24,10 +24,19 @@ def _ensure_test_database() -> None:
             conn.execute(text(f'CREATE DATABASE "{test_db}"'))
     engine.dispose()
 
+    # db/init の SQL は開発用の DB にしか実行されないため、テスト用の DB にも pgvector を入れる
+    engine = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    engine.dispose()
+
 
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = TEST_DATABASE_URL
+    # テストから OpenAI API や S3 を呼ばないようにする（呼ぶ処理はテストの中でモックにする）
+    OPENAI_API_KEY = "test-key"
+    DOCUMENTS_BUCKET = ""
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -36,8 +45,9 @@ def _test_database():
 
 
 @pytest.fixture
-def app():
+def app(tmp_path):
     app = create_app(TestConfig)
+    app.config["DOCUMENTS_DIR"] = str(tmp_path / "documents")
     with app.app_context():
         db.drop_all()
         db.create_all()
