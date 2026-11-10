@@ -3,8 +3,6 @@
 PostgreSQL 17 + pgvector。テーブルは Flask-SQLAlchemy のモデル（`backend/app/models/`）で定義し、Flask-Migrate（Alembic）でマイグレーションする。
 
 > **このドキュメントと実装が食い違う場合は、モデル（`backend/app/models/`）が正。** モデルを変えたら、この表も直す。
-> **実装の状況（2026-11-10）**: main にあるのは `users` だけ。ほかのテーブルは、マージ待ちの PR（#10 資料の取り込み・#12 チャット・#13 問い合わせ・お知らせ）で追加する。3 章の「実装」の列を見て、まだ main にないテーブルを前提に作業しないこと。PR がマージされたら、この注意書きと「実装」の列を消す。
->
 > 業務のルール（状態の移り方・権限）は [domain-model.md](domain-model.md)、AI の処理は [ai.md](ai.md)、API の形は [../api-spec.md](../api-spec.md)。
 
 ## 1. 方針
@@ -44,19 +42,19 @@ erDiagram
 
 ## 3. テーブル一覧（11 テーブル）
 
-| 区分 | テーブル | 内容 | モデル | マイグレーション | 実装 |
-|---|---|---|---|---|---|
-| アカウント | `users` | 利用者 | `user.py` | `cb9975508bd8` | main |
-| 資料 | `documents` | 資料（公開範囲・取り込みの状態） | `document.py` | `d79adad5597a` | #10（マージ待ち） |
-| | `document_versions` | 資料の版（原本ファイルの情報） | | | #10 |
-| | `document_chunks` | 検索の単位（本文・ベクトル） | | | #10 |
-| チャット | `conversations` | 会話 | `chat.py` | `952c4bfbea6b` | #12（マージ待ち） |
-| | `messages` | 質問と AI の回答（処理の過程・根拠・費用も） | | | #12 |
-| 問い合わせ | `inquiries` | 担当部署への問い合わせ | `inquiry.py` | `c44ed2324f65` | #13（マージ待ち） |
-| | `inquiry_replies` | 担当部署からの回答 | | | #13 |
-| お知らせ | `notices` | お知らせ | `notice.py` | | #13 |
-| | `notice_reads` | 既読 | | | #13 |
-| 設定 | `app_settings` | 画面から変える設定（通知設定） | | | #13 |
+| 区分 | テーブル | 内容 | モデル | マイグレーション |
+|---|---|---|---|---|
+| アカウント | `users` | 利用者 | `user.py` | `cb9975508bd8` |
+| 資料 | `documents` | 資料（公開範囲・取り込みの状態） | `document.py` | `d79adad5597a` |
+| | `document_versions` | 資料の版（原本ファイルの情報） | | |
+| | `document_chunks` | 検索の単位（本文・ベクトル） | | |
+| チャット | `conversations` | 会話 | `chat.py` | `952c4bfbea6b` |
+| | `messages` | 質問と AI の回答（処理の過程・根拠・費用も） | | |
+| 問い合わせ | `inquiries` | 担当部署への問い合わせ | `inquiry.py` | `c44ed2324f65` |
+| | `inquiry_replies` | 担当部署からの回答 | | |
+| お知らせ | `notices` | お知らせ | `notice.py` | |
+| | `notice_reads` | 既読 | | |
+| 設定 | `app_settings` | 画面から変える設定（通知設定） | | |
 
 ほかに Alembic が使う `alembic_version` がある。利用履歴は専用のテーブルを持たず、`messages` の AI の回答から作る（4.3）。評価の結果は DB に入れず、ファイル（`backend/evaluation/runs/`）に保存する（[ai.md](ai.md)）。
 
