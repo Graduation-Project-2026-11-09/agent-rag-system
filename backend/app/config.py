@@ -50,6 +50,8 @@ class Config:
     DOCUMENTS_BUCKET = os.environ.get("DOCUMENTS_BUCKET", "")
     DOCUMENTS_DIR = os.environ.get("DOCUMENTS_DIR", "/data/documents")
     AWS_REGION = os.environ.get("AWS_REGION", "")
+    # アップロードできるファイルの大きさの上限。画面の上限（50MB）に、フォームの分の余裕を足した値
+    MAX_CONTENT_LENGTH = 51 * 1024 * 1024
     MAIL_HOST = os.environ.get("MAIL_HOST", "localhost")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "1025"))
 

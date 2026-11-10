@@ -1,7 +1,7 @@
 # API 仕様（Flask 実装用）
 
 フロントエンド（React）が呼び出す API の一覧です。モック（`src/mocks/handlers.js`）は、ここに書いた形と同じデータを返します。
-Flask で同じ形のレスポンスを返せば、`.env` の `VITE_USE_MOCK=false` だけで実 API に切り替わります。
+すべての API を Flask に実装したため、画面は既定で実 API を呼びます。モックで動かすときは `VITE_USE_MOCK=true` にします。
 
 - ベース URL：`/api`（開発時は Vite のプロキシで `http://localhost:5000` に転送されます）
 - 認証：Flask のセッション Cookie（`HttpOnly`）。フロントは `credentials: 'include'` で送信します
@@ -17,7 +17,7 @@ Flask で同じ形のレスポンスを返せば、`.env` の `VITE_USE_MOCK=fal
 | role | 説明 | 利用できる API |
 |---|---|---|
 | `user` | 一般利用者 | 認証、チャット、自分の問い合わせ、お知らせ |
-| `staff` | 部署担当者 | user の範囲 ＋ `/admin/inquiries`（`handlesDepartment` あてのみ）、`/admin/documents`、`/admin/notices` |
+| `staff` | 部署担当者 | user の範囲 ＋ `/admin/inquiries`・`/admin/documents`（どちらも `handlesDepartment` の部署のものだけ）、`/admin/notices` |
 | `admin` | 管理者 | すべて |
 
 ## 認証
@@ -178,11 +178,11 @@ def send_message(cid):
 | メソッド | パス | リクエスト | レスポンス |
 |---|---|---|---|
 | GET | `/admin/users?q=&department=&role=&status=` | — | `User[]` |
-| POST | `/admin/users` | `{ employeeId, name, email, department, role, handlesDepartment, passwordMode: "invite" \| "password", password }` | `User`（重複は 409） |
+| POST | `/admin/users` | `{ employeeId, name, email, department, role, handlesDepartment, passwordMode: "password", password }` | `User`（重複は 409。`passwordMode: "invite"` は準備中のため 400） |
 | POST | `/admin/users/bulk` | `{ users: [{ employeeId, name, email, department, role }] }` | `{ created, errors: [{ row, message }] }` |
 | PATCH | `/admin/users/:id` | `User` の一部（`status` の変更で利用停止・再開） | `User` |
 | DELETE | `/admin/users/:id` | — | 204 |
-| POST | `/admin/users/:id/password-reset` | — | 204 |
+| POST | `/admin/users/:id/password-reset` | — | 準備中（メールを送る仕組みができるまで作らない） |
 
 ## ドキュメント
 
@@ -230,3 +230,8 @@ def send_message(cid):
 ```
 
 `savedMinutes` は企画書の試算と同じく「自己解決 1 件あたり 20 分」で計算しています。
+
+費用の確認のため、`Log` には `mode`（agentic / basic）・`inputTokens`・`outputTokens`・`costUsd` を、`summary` には `totalCostUsd` も含めます。`Log` は AI の回答（`messages`）から作り、`result` は「問い合わせを送った → inquiry」「資料に答えがなかった・一部だけ → no_answer」「それ以外 → resolved」で決めます。
+
+## メール・定期処理（今は作らない）
+メールの送信（招待・パスワード再設定・お知らせのメール配信・通知）と、定期処理（未対応の問い合わせの検知・週次レポート）は作りません。お知らせの予約は「配信日時を過ぎたら表示する」だけで実現し、通知設定は保存だけできます。

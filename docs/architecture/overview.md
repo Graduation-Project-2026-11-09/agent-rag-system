@@ -42,8 +42,8 @@ AIエージェントを活用した社内問い合わせ・業務支援システ
 ```
 agent-rag-system/
 ├─ frontend/                 画面（React）。モックアップ（55 画面）を流用
-│   ├─ src/api/              API の呼び出し（認証は実 API、それ以外はまだモック）
-│   ├─ src/mocks/            ダミーデータとモック API（実装が進んだら削除）
+│   ├─ src/api/              API の呼び出し（既定は実 API。VITE_USE_MOCK=true でモック）
+│   ├─ src/mocks/            ダミーデータとモック API（画面だけで確認したいとき用）
 │   ├─ src/pages/            画面
 │   └─ Caddyfile             stg・本番で画面を配信する Caddy の設定
 ├─ backend/                  API と worker（同じ Python プロジェクト）

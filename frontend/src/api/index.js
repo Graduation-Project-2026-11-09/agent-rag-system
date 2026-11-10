@@ -1,5 +1,5 @@
 // 画面から呼び出す API 関数の一覧。
-// USE_MOCK=true のときは src/mocks/handlers.js が応答し、false のときは Flask の /api/* を呼び出す。
+// 既定では Flask の /api/* を呼び出す。VITE_USE_MOCK=true のときは src/mocks/handlers.js が応答する。
 // エンドポイント仕様は docs/api-spec.md を参照。
 import { USE_MOCK, http, streamSSE } from './client';
 import * as mock from '../mocks/handlers';

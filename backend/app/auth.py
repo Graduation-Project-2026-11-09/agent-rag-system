@@ -52,3 +52,30 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapper
+
+
+def roles_required(*roles: str):
+    """ログインしていなければ 401、権限が roles に含まれなければ 403 を返すデコレータ。
+
+    Args:
+        roles: 利用できる権限（user / staff / admin）。
+    """
+
+    def decorator(view):
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if user is None:
+                return jsonify(message="ログインしてください"), 401
+            if user.role not in roles:
+                return jsonify(message="この操作を行う権限がありません"), 403
+            return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def handles(user: User, department: str) -> bool:
+    """利用者が、その部署あての問い合わせや資料を扱えるか。管理者はすべて扱える。"""
+    return user.role == "admin" or (user.role == "staff" and user.handles_department == department)
