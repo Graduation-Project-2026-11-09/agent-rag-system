@@ -30,6 +30,7 @@ def upgrade():
     sa.Column('status', sa.String(length=16), nullable=False),
     sa.Column('processing_stage', sa.String(length=16), nullable=True),
     sa.Column('processing_started_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('processing_attempts', sa.Integer(), server_default='0', nullable=False),
     sa.Column('error_message', sa.Text(), nullable=True),
     sa.Column('current_version', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),

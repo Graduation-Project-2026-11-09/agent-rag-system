@@ -10,9 +10,23 @@ from ..models.document import VISIBILITY_TYPES
 from ..storage import get_storage
 from .extract import ExtractionError, file_type_from_name
 
+# DB のカラムの長さ（models/document.py）。超えると DB のエラーになるため、保存の前に確かめる
+MAX_TITLE_CHARS = 200
+MAX_NAME_CHARS = 100  # 部署・分類
+MAX_FILE_NAME_CHARS = 255
+MAX_TAG_CHARS = 50
+# document_versions.size は Integer（32 ビット）のため
+MAX_FILE_SIZE = 2**31 - 1
+
 
 class RegistrationError(Exception):
     """登録する資料の内容が正しくない。メッセージは画面にそのまま表示する。"""
+
+
+def _check_length(value: str | None, label: str, max_length: int) -> None:
+    """文字数が DB のカラムの長さ以内か確かめる。超えていれば RegistrationError を送出する。"""
+    if value is not None and len(value) > max_length:
+        raise RegistrationError(f"{label}は {max_length} 文字以内にしてください")
 
 
 def register_document(
@@ -50,7 +64,8 @@ def register_document(
         登録した資料。
 
     Raises:
-        RegistrationError: 形式が対応していない、または公開範囲の指定が正しくない場合。
+        RegistrationError: 形式が対応していない、長すぎる値がある、
+            または公開範囲の指定が正しくない場合。
     """
     try:
         file_type = file_type_from_name(file_name)
@@ -58,6 +73,18 @@ def register_document(
         raise RegistrationError(str(e)) from e
     if not data:
         raise RegistrationError("ファイルが空です")
+    if len(data) > MAX_FILE_SIZE:
+        raise RegistrationError("ファイルが大きすぎます")
+    if not title.strip():
+        raise RegistrationError("資料名を入力してください")
+    _check_length(title, "資料名", MAX_TITLE_CHARS)
+    _check_length(file_name, "ファイル名", MAX_FILE_NAME_CHARS)
+    _check_length(department, "部署", MAX_NAME_CHARS)
+    _check_length(category, "分類", MAX_NAME_CHARS)
+    for tag in tags:
+        _check_length(tag, "タグ", MAX_TAG_CHARS)
+    for visible in visible_departments:
+        _check_length(visible, "閲覧できる部署", MAX_NAME_CHARS)
     if visibility_type not in VISIBILITY_TYPES:
         raise RegistrationError(f"公開範囲の指定が正しくありません: {visibility_type}")
     if visibility_type == "departments" and not visible_departments:
@@ -93,6 +120,13 @@ def register_document(
             uploaded_by_id=uploaded_by.id if uploaded_by else None,
         )
     )
-    get_storage().save(storage_key, data)
-    db.session.commit()
+    storage = get_storage()
+    try:
+        storage.save(storage_key, data)
+        db.session.commit()
+    except Exception:
+        # DB に登録できなかったときは、どの資料にも属さない原本が残らないよう消す
+        db.session.rollback()
+        storage.delete(storage_key)
+        raise
     return document

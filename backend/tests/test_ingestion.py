@@ -193,6 +193,62 @@ def test_import_document_command_rejects_unsupported_file(app, tmp_path):
     assert "対応していない形式" in result.output
 
 
+def test_register_rejects_values_longer_than_columns(app):
+    with pytest.raises(RegistrationError, match="資料名は 200 文字以内"):
+        _register(title="あ" * 201)
+    with pytest.raises(RegistrationError, match="ファイル名は 255 文字以内"):
+        register_document("a" * 252 + ".txt", b"x", title="t", department="人事部")
+    with pytest.raises(RegistrationError, match="タグは 50 文字以内"):
+        _register(tags=["あ" * 51])
+    with pytest.raises(RegistrationError, match="部署は 100 文字以内"):
+        register_document("a.txt", b"x", title="t", department="部" * 101)
+    assert db.session.scalars(select(Document)).all() == []
+
+
+def test_register_removes_file_when_commit_fails(app, monkeypatch):
+    saved = []
+    storage = get_storage()
+    monkeypatch.setattr("app.ingestion.registration.get_storage", lambda: storage)
+    original_save = storage.save
+    monkeypatch.setattr(
+        storage, "save", lambda key, data: (saved.append(key), original_save(key, data))
+    )
+
+    def fail():
+        raise RuntimeError("DB に接続できません")
+
+    monkeypatch.setattr(db.session, "commit", fail)
+    with pytest.raises(RuntimeError):
+        _register()
+
+    with pytest.raises(FileNotFoundError):
+        storage.load(saved[0])
+
+
+def test_stalled_document_gives_up_after_max_attempts(app, fake_embed):
+    document_id = _register().id
+    document = db.session.get(Document, document_id)
+    # 取り込み中に worker が止まることが、上限の回数続いた状態
+    document.processing_stage = "embedding"
+    document.processing_started_at = datetime.now(UTC) - timedelta(hours=1)
+    document.processing_attempts = pipeline.MAX_ATTEMPTS
+    db.session.commit()
+
+    assert ingest_next() is False
+
+    document = db.session.get(Document, document_id)
+    assert document.status == "error"
+    assert document.error_message == pipeline.TOO_MANY_ATTEMPTS_MESSAGE
+    assert document.processing_attempts == 0  # 取り込み直すときは 1 回目から数える
+    assert fake_embed == []
+
+
+def test_attempts_are_counted_and_reset_after_success(app, fake_embed):
+    document_id = _register().id
+    ingest_next()
+    assert db.session.get(Document, document_id).processing_attempts == 0
+
+
 def test_seed_documents_command(app):
     runner = app.test_cli_runner()
     result = runner.invoke(args=["seed-documents"])
