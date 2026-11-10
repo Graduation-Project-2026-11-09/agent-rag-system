@@ -171,6 +171,7 @@ def reindex_document(document_id: int):
     document.status = "processing"
     document.processing_stage = "uploaded"
     document.processing_started_at = None
+    document.processing_attempts = 0
     document.error_message = None
     db.session.commit()
     return jsonify(document.to_dict(_chunk_counts([document.id]).get(document.id, 0)))

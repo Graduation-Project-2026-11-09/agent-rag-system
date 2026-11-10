@@ -101,7 +101,7 @@ worker（5 秒ごとに DB を確認。取り込み待ちがなくなるまで�
 | worker への伝え方 | DB の `documents.status` を見に行く。`SELECT … FOR UPDATE SKIP LOCKED` で、worker が複数あっても二重に処理しない |
 | 止まった処理 | 取り込みを始めてから 30 分たっても終わらない資料は、worker が止まったとみなして取り込み直す。資料のせいで毎回止まる場合に無限に繰り返さないよう、3 回まで（`processing_attempts`）。超えたら status=error にする |
 | 版 | 改定したら新しい版を追加する。取り込みが終わったら古い版のチャンクは削除する（版の情報と原本は履歴として残る）。取り込み中に新しい版が登録されたら、古い版の結果は保存しない |
-| 読み取れない資料 | 画像だけの PDF・パスワード付き PDF・壊れたファイルは status=error にし、理由を `error_message` に保存する。worker は error の資料を自動では取り込み直さない。取り込み直す API（`POST /admin/documents/:id/reindex`）はまだない（資料管理の API で追加する） |
+| 読み取れない資料 | 画像だけの PDF・パスワード付き PDF・壊れたファイルは status=error にし、理由を `error_message` に保存する。worker は error の資料を自動では取り込み直さない。資料管理の画面の「取り込み直し」（`POST /admin/documents/:id/reindex`）で取り込み直す |
 
 ### テーブル
 | テーブル | 内容 |
