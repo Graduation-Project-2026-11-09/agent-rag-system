@@ -9,8 +9,15 @@ from ..auth import login_required, roles_required
 from ..extensions import db
 from ..masters import DEPARTMENTS, DOCUMENT_CATEGORIES
 from ..models import Conversation, Message, User
+from .helpers import BadRequest, error, is_ascii_digits
 
 bp = Blueprint("logs", __name__)
+
+
+@bp.errorhandler(BadRequest)
+def _bad_request(e: BadRequest):
+    return error(str(e), 400)
+
 
 # 企画書の試算: 自己解決 1 件あたり 20 分の対応時間を減らせる
 SAVED_MINUTES_PER_RESOLVED = 20
@@ -37,7 +44,10 @@ def _log_query(days: str | None) -> Select:
         .where(Message.role == "assistant")
         .order_by(Message.created_at.desc())
     )
-    if days and days.isdigit():
+    if days:
+        # 不正な値を黙って無視すると、全期間が返って集計を誤るため 400 にする
+        if not is_ascii_digits(days) or int(days) == 0:
+            raise BadRequest("期間の指定が正しくありません")
         query = query.where(Message.created_at >= datetime.now(UTC) - timedelta(days=int(days)))
     return query
 

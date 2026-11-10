@@ -3,10 +3,12 @@
 from datetime import UTC, datetime
 
 from flask import Blueprint, jsonify
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 
 from ..auth import current_user, login_required, roles_required
 from ..extensions import db
+from ..masters import DEPARTMENTS
 from ..models import AppSetting, Notice, NoticeRead, User
 from ..models.notice import CHANNELS, PRIORITIES
 from .helpers import BadRequest, departments_target, error, json_body, parse_datetime, required_text
@@ -23,42 +25,42 @@ DEFAULT_NOTIFICATION_SETTINGS = {
             "description": "担当部署の担当者に通知します",
             "inApp": True,
             "email": True,
-        },  # noqa: E501
+        },
         {
             "key": "inquiry_replied",
             "label": "問い合わせに回答があったとき",
             "description": "問い合わせた利用者に通知します",
             "inApp": True,
             "email": True,
-        },  # noqa: E501
+        },
         {
             "key": "inquiry_overdue",
             "label": "問い合わせが3営業日以上未対応のとき",
             "description": "担当部署と管理者に通知します",
             "inApp": True,
             "email": False,
-        },  # noqa: E501
+        },
         {
             "key": "document_indexed",
             "label": "資料の取り込みが完了したとき",
             "description": "アップロードした担当者に通知します",
             "inApp": True,
             "email": False,
-        },  # noqa: E501
+        },
         {
             "key": "document_failed",
             "label": "資料の取り込みに失敗したとき",
             "description": "アップロードした担当者と管理者に通知します",
             "inApp": True,
             "email": True,
-        },  # noqa: E501
+        },
         {
             "key": "low_rating",
             "label": "AIの回答に低評価が付いたとき",
             "description": "管理者に通知します（資料改善の参考）",
             "inApp": True,
             "email": False,
-        },  # noqa: E501
+        },
     ],
     "departmentContacts": [
         {"department": "人事部", "email": "jinji@example.co.jp"},
@@ -75,11 +77,17 @@ def _bad_request(e: BadRequest):
     return error(str(e), 400)
 
 
-def _targets(user: User):
-    """利用者が配信先に含まれるお知らせの条件（全員向け、または所属部署向け）。"""
-    return or_(
-        func.cardinality(Notice.target_departments) == 0,
-        Notice.target_departments.contains([user.department]),
+def _visible_to(user: User):
+    """利用者に見せるお知らせの条件（配信中で、全員向けか所属部署向け）。"""
+    now = datetime.now(UTC)
+    return and_(
+        Notice.is_draft.is_(False),
+        or_(Notice.publish_at.is_(None), Notice.publish_at <= now),
+        or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
+        or_(
+            func.cardinality(Notice.target_departments) == 0,
+            Notice.target_departments.contains([user.department]),
+        ),
     )
 
 
@@ -88,19 +96,11 @@ def _targets(user: User):
 def list_mine():
     """自分あての配信中のお知らせ（既読かどうかを含む）。"""
     user = current_user()
-    now = datetime.now(UTC)
     read_ids = set(
         db.session.scalars(select(NoticeRead.notice_id).where(NoticeRead.user_id == user.id))
     )
     notices = db.session.scalars(
-        select(Notice)
-        .where(
-            Notice.is_draft.is_(False),
-            or_(Notice.publish_at.is_(None), Notice.publish_at <= now),
-            or_(Notice.expire_at.is_(None), Notice.expire_at >= now),
-            _targets(user),
-        )
-        .order_by(Notice.publish_at.desc())
+        select(Notice).where(_visible_to(user)).order_by(Notice.publish_at.desc())
     )
     return jsonify(
         [
@@ -120,15 +120,18 @@ def list_mine():
 @bp.post("/notices/<int:notice_id>/read")
 @login_required
 def mark_read(notice_id: int):
+    """お知らせを既読にする。自分に配信されていないお知らせは存在しないものとして扱う。"""
     user = current_user()
-    if db.session.get(Notice, notice_id) is None:
+    visible = db.session.scalar(select(Notice.id).where(Notice.id == notice_id, _visible_to(user)))
+    if visible is None:
         return error("お知らせが見つかりません", 404)
-    exists = db.session.scalar(
-        select(NoticeRead).where(NoticeRead.notice_id == notice_id, NoticeRead.user_id == user.id)
+    # 同時に 2 回押されても一意制約の違反にならないよう、すでにあれば何もしない
+    db.session.execute(
+        insert(NoticeRead)
+        .values(notice_id=notice_id, user_id=user.id)
+        .on_conflict_do_nothing(index_elements=["notice_id", "user_id"])
     )
-    if exists is None:
-        db.session.add(NoticeRead(notice_id=notice_id, user_id=user.id))
-        db.session.commit()
+    db.session.commit()
     return "", 204
 
 
@@ -241,15 +244,71 @@ def get_settings():
     return jsonify(setting.value if setting else DEFAULT_NOTIFICATION_SETTINGS)
 
 
+DAYS_OF_WEEK = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _validate_settings(data: dict) -> dict:
+    """通知設定の中身を確かめ、保存する形にそろえる。
+
+    画面が期待しない形の値を保存すると、次に開いたときに画面が壊れるため。
+    イベントの名前と説明は画面からの値を使わず、初期値のものを使う。
+
+    Raises:
+        BadRequest: 形式や値が正しくない場合。
+    """
+    events, contacts, weekly = (
+        data.get("events"),
+        data.get("departmentContacts"),
+        data.get("weeklyReport"),
+    )
+    if (
+        not isinstance(events, list)
+        or not isinstance(contacts, list)
+        or not isinstance(weekly, dict)
+    ):
+        raise BadRequest("通知設定の形式が正しくありません")
+
+    sent = {e.get("key"): e for e in events if isinstance(e, dict)}
+    normalized_events = []
+    for default in DEFAULT_NOTIFICATION_SETTINGS["events"]:
+        event = sent.get(default["key"], default)
+        if not isinstance(event.get("inApp"), bool) or not isinstance(event.get("email"), bool):
+            raise BadRequest("通知の設定の値が正しくありません")
+        normalized_events.append({**default, "inApp": event["inApp"], "email": event["email"]})
+
+    normalized_contacts = []
+    for contact in contacts:
+        department = contact.get("department") if isinstance(contact, dict) else None
+        email = str(contact.get("email") or "").strip() if isinstance(contact, dict) else ""
+        if department not in DEPARTMENTS:
+            raise BadRequest("窓口の部署を選択してください")
+        if "@" not in email or len(email) > 255:
+            raise BadRequest(f"{department}の窓口のメールアドレスが正しくありません")
+        if any(c["department"] == department for c in normalized_contacts):
+            raise BadRequest(f"{department}の窓口が重複しています")
+        normalized_contacts.append({"department": department, "email": email})
+
+    recipients = str(weekly.get("recipients") or "").strip()
+    if not isinstance(weekly.get("enabled"), bool) or weekly.get("dayOfWeek") not in DAYS_OF_WEEK:
+        raise BadRequest("週次レポートの設定が正しくありません")
+    if len(recipients) > 500:
+        raise BadRequest("週次レポートの送信先は 500 文字以内で入力してください")
+    return {
+        "events": normalized_events,
+        "departmentContacts": normalized_contacts,
+        "weeklyReport": {
+            "enabled": weekly["enabled"],
+            "dayOfWeek": weekly["dayOfWeek"],
+            "recipients": recipients,
+        },
+    }
+
+
 @bp.put("/admin/notification-settings")
 @roles_required("admin")
 def save_settings():
     """通知設定を保存する。メールは今は送らないため、設定は保存するだけ（ai.md 参照）。"""
-    data = json_body()
-    shapes = {"events": list, "departmentContacts": list, "weeklyReport": dict}
-    if not all(isinstance(data.get(key), shape) for key, shape in shapes.items()):
-        raise BadRequest("通知設定の形式が正しくありません")
-    value = {k: data[k] for k in ("events", "departmentContacts", "weeklyReport")}
+    value = _validate_settings(json_body())
     setting = db.session.get(AppSetting, NOTIFICATION_SETTINGS_KEY)
     if setting is None:
         db.session.add(AppSetting(key=NOTIFICATION_SETTINGS_KEY, value=value))

@@ -128,6 +128,7 @@ function BulkForm() {
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const onFile = async (file) => {
     if (!file) return;
@@ -137,9 +138,16 @@ function BulkForm() {
   };
 
   const submit = async () => {
-    const res = await userApi.bulkCreate(rows);
-    setResult(res);
-    if (res.created) toast(`${res.created} 件のアカウントを「招待中」で登録しました`);
+    setSaving(true);
+    try {
+      const res = await userApi.bulkCreate(rows);
+      setResult(res);
+      if (res.created) toast(`${res.created} 件のアカウントを「招待中」で登録しました`);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -176,7 +184,7 @@ function BulkForm() {
       )}
       <div className="form-actions">
         <button className="btn" onClick={() => navigate('/admin/accounts')}>一覧へ戻る</button>
-        <button className="btn btn-primary" disabled={!rows.length || !!result} onClick={submit}>{rows.length} 件を登録</button>
+        <button className="btn btn-primary" disabled={!rows.length || !!result || saving} onClick={submit}>{saving ? '登録中…' : `${rows.length} 件を登録`}</button>
       </div>
     </div>
   );

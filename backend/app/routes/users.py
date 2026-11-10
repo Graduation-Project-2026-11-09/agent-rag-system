@@ -2,6 +2,7 @@
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 
 from ..auth import current_user, roles_required
 from ..extensions import db
@@ -115,7 +116,7 @@ def create_user():
     user = User(**profile, status="active")
     _set_password(user, str(data.get("password") or ""))
     db.session.add(user)
-    db.session.commit()
+    _commit_unique()
     return jsonify(user.to_dict()), 201
 
 
@@ -143,7 +144,7 @@ def bulk_create():
         db.session.add(User(**profile, status="invited"))
         db.session.flush()  # 同じ CSV の中の重複も検出できるようにする
         created += 1
-    db.session.commit()
+    _commit_unique()
     return jsonify(created=created, errors=errors)
 
 
@@ -155,22 +156,33 @@ def update_user(user_id: int):
     if user is None:
         return error("アカウントが見つかりません", 404)
     data = json_body()
-    me = current_user()
-    changes_own_access = data.get("status") == "suspended" or data.get("role", "admin") != "admin"
-    if user.id == me.id and changes_own_access:
+    # 先にすべての値を確かめてから変更する（途中で 400 にしたとき、変更が残らないように）
+    profile = _validate_profile({**_profile_of(user), **data})
+    status = data.get("status", user.status)
+    if status not in STATUSES:
+        raise BadRequest("利用状態の値が正しくありません")
+    if user.id == current_user().id and (status != "active" or profile["role"] != "admin"):
         # 管理者が自分を停止・降格すると、誰も管理できなくなるおそれがあるため
         raise BadRequest("自分自身の利用停止や権限の変更はできません")
-
-    profile = _validate_profile({**_profile_of(user), **data})
     _ensure_unique(profile["email"], profile["employee_id"], exclude_id=user.id)
+
     for key, value in profile.items():
         setattr(user, key, value)
-    if "status" in data:
-        if data["status"] not in STATUSES:
-            raise BadRequest("利用状態の値が正しくありません")
-        user.status = data["status"]
-    db.session.commit()
+    user.status = status
+    _commit_unique()
     return jsonify(user.to_dict())
+
+
+def _commit_unique() -> None:
+    """コミットする。同時に登録されて一意制約に違反したら、409（Conflict）にする。
+
+    _ensure_unique() の確認から登録までの間に、別のリクエストが同じ値を登録することがあるため。
+    """
+    try:
+        db.session.commit()
+    except IntegrityError as e:
+        db.session.rollback()
+        raise Conflict("メールアドレスまたは社員番号はすでに登録されています") from e
 
 
 def _profile_of(user: User) -> dict:

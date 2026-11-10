@@ -275,6 +275,8 @@ def test_document_upload_and_manage(client, people):
     assert patched["title"] == "結婚の手続き"
     assert patched["visibility"] == {"type": "departments", "departments": ["人事部"]}
 
+    db.session.get(Document, int(document["id"])).status = "error"  # 取り込みに失敗した状態
+    db.session.commit()
     assert client.post(f"{url}/reindex").get_json()["processingStage"] == "uploaded"
     assert client.delete(url).status_code == 204
     assert db.session.get(Document, int(document["id"])) is None
@@ -339,3 +341,116 @@ def test_masters(client, people):
     login_as(client, people["user"])
     assert "人事部" in client.get("/api/departments").get_json()
     assert "人事手続き" in client.get("/api/document-categories").get_json()
+
+
+# ---------- レビューの指摘（不正な入力・同時実行） ----------
+
+
+def test_inquiry_rejects_invalid_values(client, people):
+    login_as(client, people["user"])
+    base = {"department": "人事部", "subject": "件名", "body": "本文"}
+    assert client.post("/api/inquiries", json={**base, "messageId": "abc"}).status_code == 400
+    bad_sources = {**base, "context": {"sources": 3}}
+    assert client.post("/api/inquiries", json=bad_sources).status_code == 400
+
+    inquiry_id = _send_inquiry(client).get_json()["id"]
+    login_as(client, people["hr"])
+    url = f"/api/admin/inquiries/{inquiry_id}"
+    assert client.patch(url, json={"assignee": "あ" * 101}).status_code == 400
+    # 「²」は str.isdigit() では数字だが int() にできない
+    assert client.get("/api/admin/inquiries", query_string={"q": "INQ-²"}).status_code == 200
+
+
+def test_document_meta_must_be_object(client, people):
+    login_as(client, people["hr"])
+    response = client.post(
+        "/api/admin/documents",
+        data={"file": (io.BytesIO(b"# a\nb\n"), "a.md"), "meta": "[1, 2]"},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 400
+    document_id = _upload(client).get_json()["id"]
+    assert client.patch(f"/api/admin/documents/{document_id}", json=[1]).status_code == 400
+
+
+def test_reindex_is_rejected_while_processing(client, people):
+    login_as(client, people["hr"])
+    document_id = _upload(client).get_json()["id"]  # 取り込み待ち（processing）
+    assert client.post(f"/api/admin/documents/{document_id}/reindex").status_code == 409
+
+
+def test_delete_document_succeeds_even_if_file_removal_fails(client, people, monkeypatch):
+    login_as(client, people["hr"])
+    document_id = _upload(client).get_json()["id"]
+
+    class BrokenStorage:
+        def delete(self, key):
+            raise OSError("S3 に接続できません")
+
+    monkeypatch.setattr("app.routes.documents.get_storage", lambda: BrokenStorage())
+    assert client.delete(f"/api/admin/documents/{document_id}").status_code == 204
+
+
+def test_logs_reject_invalid_days(client, people):
+    login_as(client, people["admin"])
+    assert client.get("/api/admin/logs", query_string={"days": "abc"}).status_code == 400
+    assert client.get("/api/admin/logs/summary", query_string={"days": "-1"}).status_code == 400
+
+
+def test_cannot_mark_invisible_notice_as_read(client, people):
+    login_as(client, people["hr"])
+    draft = client.post("/api/admin/notices", json=_notice(isDraft=True)).get_json()
+    other = client.post(
+        "/api/admin/notices",
+        json=_notice(target={"type": "departments", "departments": ["開発部"]}),
+    ).get_json()
+    published = client.post("/api/admin/notices", json=_notice()).get_json()
+
+    login_as(client, people["user"])
+    assert client.post(f"/api/notices/{draft['id']}/read").status_code == 404
+    assert client.post(f"/api/notices/{other['id']}/read").status_code == 404
+    # 2 回押しても既読は 1 件
+    assert client.post(f"/api/notices/{published['id']}/read").status_code == 204
+    assert client.post(f"/api/notices/{published['id']}/read").status_code == 204
+
+
+def test_notification_settings_are_validated(client, people):
+    login_as(client, people["admin"])
+    settings = client.get("/api/admin/notification-settings").get_json()
+
+    bad_contact = {
+        **settings,
+        "departmentContacts": [{"department": "存在しない部", "email": "a@b"}],
+    }
+    assert client.put("/api/admin/notification-settings", json=bad_contact).status_code == 400
+    duplicated = {**settings, "departmentContacts": settings["departmentContacts"][:1] * 2}
+    assert client.put("/api/admin/notification-settings", json=duplicated).status_code == 400
+    bad_event = {**settings, "events": [{**settings["events"][0], "inApp": "yes"}]}
+    assert client.put("/api/admin/notification-settings", json=bad_event).status_code == 400
+
+    # イベントの名前は画面から変えられない
+    renamed = {**settings, "events": [{**settings["events"][0], "label": "書き換え"}]}
+    saved = client.put("/api/admin/notification-settings", json=renamed).get_json()
+    assert saved["events"][0]["label"] == settings["events"][0]["label"]
+
+
+def test_unique_violation_on_commit_becomes_conflict(client, people, monkeypatch):
+    login_as(client, people["admin"])
+    # 確認の後に別のリクエストが同じ値を登録した状態を再現する
+    monkeypatch.setattr("app.routes.users._ensure_unique", lambda *args, **kwargs: None)
+    client.post("/api/admin/users", json=NEW_USER)
+    assert client.post("/api/admin/users", json=NEW_USER).status_code == 409
+
+
+def test_invalid_update_does_not_change_user(client, people):
+    login_as(client, people["admin"])
+    target = people["user"]
+    response = client.patch(
+        f"/api/admin/users/{target.id}", json={"name": "変更後", "status": "unknown"}
+    )
+    assert response.status_code == 400
+    db.session.expire_all()
+    assert db.session.get(User, target.id).name == "山田 花子"
+    # 自分の名前の変更（権限・状態はそのまま）はできる
+    own = client.patch(f"/api/admin/users/{people['admin'].id}", json={"name": "管理 次郎"})
+    assert own.status_code == 200

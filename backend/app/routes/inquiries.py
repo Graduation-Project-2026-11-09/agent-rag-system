@@ -9,7 +9,16 @@ from ..extensions import db
 from ..masters import DEPARTMENTS
 from ..models import Inquiry, InquiryReply, Message
 from ..models.inquiry import STATUSES
-from .helpers import BadRequest, error, json_body, required_text
+from .helpers import (
+    BadRequest,
+    error,
+    is_ascii_digits,
+    json_body,
+    optional_text,
+    parse_id,
+    required_text,
+    string_list,
+)
 
 bp = Blueprint("inquiries", __name__)
 
@@ -50,8 +59,15 @@ def create():
 
     message = None
     if data.get("messageId"):
-        message = db.session.get(Message, int(data["messageId"]))
-        if message is None or message.conversation.user_id != user.id:
+        # 「承認して送信」が連打されても同じ回答から 2 件作らないよう、行をロックしてから確かめる
+        message = db.session.get(
+            Message, parse_id(data["messageId"], "元の回答"), with_for_update=True
+        )
+        if (
+            message is None
+            or message.role != "assistant"
+            or message.conversation.user_id != user.id
+        ):
             return error("元の回答が見つかりません", 404)
         if message.inquiry_id is not None:
             return error("この回答からはすでに問い合わせを送信しています", 409)
@@ -66,7 +82,7 @@ def create():
         status="open",
         context={
             "question": str(context.get("question") or ""),
-            "sources": [str(s) for s in context.get("sources") or []],
+            "sources": string_list(context.get("sources"), "確認済みの資料"),
             "aiAnswerSummary": str(context.get("aiAnswerSummary") or ""),
         },
     )
@@ -97,7 +113,7 @@ def list_for_staff():
         ]
         # 問い合わせ番号（INQ-2026-0142）でも探せるようにする。番号の最後は id
         number = keyword.rsplit("-", 1)[-1]
-        if number.isdigit():
+        if is_ascii_digits(number):
             conditions.append(Inquiry.id == int(number))
         query = query.where(or_(*conditions))
     return jsonify([i.to_dict() for i in db.session.scalars(query)])
@@ -132,7 +148,7 @@ def update(inquiry_id: int):
             raise BadRequest("対応状況の値が正しくありません")
         inquiry.status = data["status"]
     if "assignee" in data:
-        inquiry.assignee = str(data["assignee"] or "").strip() or None
+        inquiry.assignee = optional_text(data, "assignee", "担当者", 100)
     db.session.commit()
     return jsonify(inquiry.to_dict())
 

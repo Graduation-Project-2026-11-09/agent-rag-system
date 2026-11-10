@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 
 from flask import Blueprint, jsonify, request, send_file
 from sqlalchemy import func, or_, select
@@ -16,6 +17,7 @@ from ..storage import get_storage
 from .helpers import BadRequest, departments_target, error, parse_date, string_list
 
 bp = Blueprint("documents", __name__)
+log = logging.getLogger(__name__)
 
 MIME_TYPES = {
     "pdf": "application/pdf",
@@ -127,6 +129,8 @@ def upload_document():
         meta = json.loads(request.form.get("meta") or "{}")
     except json.JSONDecodeError as e:
         raise BadRequest("資料の情報の形式が正しくありません") from e
+    if not isinstance(meta, dict):
+        raise BadRequest("資料の情報の形式が正しくありません")
     values = _validate_meta(meta)
     try:
         document = register_document(
@@ -153,7 +157,9 @@ def update_document(document_id: int):
     document = _managed_document(document_id)
     if document is None:
         return error("資料が見つかりません", 404)
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        raise BadRequest("変更する内容の形式が正しくありません")
     for key, value in _validate_meta(body, partial=True).items():
         setattr(document, key, value)
     db.session.commit()
@@ -168,6 +174,9 @@ def reindex_document(document_id: int):
     document = _managed_document(document_id)
     if document is None:
         return error("資料が見つかりません", 404)
+    if document.status == "processing":
+        # 取り込み中に取り込み待ちへ戻すと、別の worker が同じ資料を二重に取り込むため
+        return error("取り込み中の資料は、取り込みが終わってから取り込み直してください", 409)
     document.status = "processing"
     document.processing_stage = "uploaded"
     document.processing_started_at = None
@@ -189,7 +198,11 @@ def delete_document(document_id: int):
     db.session.commit()
     storage = get_storage()
     for key in keys:
-        storage.delete(key)
+        try:
+            storage.delete(key)
+        except Exception:
+            # 資料は削除済みなので、原本が消せなくても画面にはエラーにしない（ログで後から消す）
+            log.exception("document %s: 原本 %s を削除できませんでした", document_id, key)
     return "", 204
 
 

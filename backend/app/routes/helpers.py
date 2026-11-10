@@ -20,6 +20,35 @@ def error(message: str, status: int):
     return jsonify(message=message), status
 
 
+def is_ascii_digits(value: str) -> bool:
+    """半角の数字だけか。str.isdigit() は「²」「①」も True にし、int() で失敗するため。"""
+    return value.isascii() and value.isdigit()
+
+
+def parse_id(value, label: str) -> int:
+    """画面から送られた ID（"42" や 42）を整数にする。
+
+    Raises:
+        BadRequest: 正の整数でない場合。
+    """
+    text = str(value).strip()
+    if not is_ascii_digits(text) or int(text) == 0:
+        raise BadRequest(f"{label}の値が正しくありません")
+    return int(text)
+
+
+def optional_text(data: dict, key: str, label: str, max_length: int) -> str | None:
+    """任意の文字列を取り出す。空なら None。
+
+    Raises:
+        BadRequest: 長すぎる場合。
+    """
+    value = str(data.get(key) or "").strip()
+    if len(value) > max_length:
+        raise BadRequest(f"{label}は {max_length} 文字以内で入力してください")
+    return value or None
+
+
 def required_text(data: dict, key: str, label: str, max_length: int) -> str:
     """必須の文字列を取り出す。
 
