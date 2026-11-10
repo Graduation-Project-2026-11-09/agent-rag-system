@@ -36,6 +36,16 @@ class Config:
     # 3072 次元を返す text-embedding-3-large 以外に変えるときはマイグレーションも必要
     AI_EMBEDDING_MODEL = os.environ.get("AI_EMBEDDING_MODEL", "text-embedding-3-large")
 
+    # 処理ごとのモデル（docs/architecture/ai.md「処理ごとのモデル」）。
+    # 精度が必要な充足度の評価と回答の作成は性能重視、それ以外は速さと料金を重視している
+    AI_MODEL_ANALYZE = os.environ.get("AI_MODEL_ANALYZE", "gpt-6.1-terra")
+    AI_MODEL_EXPAND = os.environ.get("AI_MODEL_EXPAND", "gpt-6.1-terra")
+    AI_MODEL_EVALUATE = os.environ.get("AI_MODEL_EVALUATE", "gpt-6.1-sol")
+    AI_MODEL_ANSWER = os.environ.get("AI_MODEL_ANSWER", "gpt-6.1-sol")
+    AI_MODEL_INQUIRY = os.environ.get("AI_MODEL_INQUIRY", "gpt-6.1-terra")
+    # チャットで使う方式。agentic（検索Agent）/ basic（通常の RAG、比較用）
+    AI_RAG_MODE = os.environ.get("AI_RAG_MODE", "agentic")
+
     # 資料の原本の保存先。DOCUMENTS_BUCKET があれば S3（AWS）、なければ DOCUMENTS_DIR（開発）
     DOCUMENTS_BUCKET = os.environ.get("DOCUMENTS_BUCKET", "")
     DOCUMENTS_DIR = os.environ.get("DOCUMENTS_DIR", "/data/documents")

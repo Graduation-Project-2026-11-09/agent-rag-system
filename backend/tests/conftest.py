@@ -59,3 +59,36 @@ def app(tmp_path):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def make_user(app):
+    """利用者を作る。部署と権限を変えて、公開範囲や権限のテストに使う。"""
+    from app.models import User
+
+    count = 0
+
+    def make(department: str = "営業部", role: str = "user", **fields) -> User:
+        nonlocal count
+        count += 1
+        user = User(
+            employee_id=fields.pop("employee_id", f"T{count:04d}"),
+            name=fields.pop("name", f"テスト 利用者{count}"),
+            email=fields.pop("email", f"user{count}@example.co.jp"),
+            department=department,
+            role=role,
+            handles_department=fields.pop("handles_department", None),
+            status=fields.pop("status", "active"),
+        )
+        user.set_password(fields.pop("password", "test-password-123"))
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    return make
+
+
+def login_as(client, user) -> None:
+    """パスワードの照合を省いてログイン状態にする（認証以外のテスト用）。"""
+    with client.session_transaction() as session:
+        session["user_id"] = user.id

@@ -9,6 +9,7 @@ import click
 from flask import Flask
 from sqlalchemy import select
 
+from . import evaluation
 from .extensions import db
 from .ingestion.registration import RegistrationError, register_document
 from .models import Document, User
@@ -201,3 +202,40 @@ def register_cli(app: Flask) -> None:
                 raise click.ClickException(f"{entry['slug']}: {e}") from e
             created += 1
         click.echo(f"seed-documents: {created} 件登録しました（取り込みは worker が行います）")
+
+    @app.cli.group("evaluate")
+    def evaluate() -> None:
+        """評価用の質問セットで、通常の RAG と検索Agent を比べる（app/evaluation.py）。"""
+
+    @evaluate.command("start")
+    @click.option(
+        "--mode",
+        "modes",
+        multiple=True,
+        type=click.Choice(evaluation.MODES),
+        help="比べる方式（省略すると両方）",
+    )
+    @click.option("--question", "question_ids", multiple=True, help="質問の ID（省略すると全問）")
+    @click.option(
+        "--sync", is_flag=True, help="Batch API を使わず 1 問ずつ実行する（回答時間を測れる）"
+    )
+    def evaluate_start(modes: tuple[str, ...], question_ids: tuple[str, ...], sync: bool) -> None:
+        """評価を始める。Batch API の場合は、最初の段階を送るところまで行う。"""
+        try:
+            run = evaluation.create_run(list(modes or evaluation.MODES), list(question_ids))
+            click.echo(f"評価の実行 ID: {run.run_id}（{len(run.items)} 件）")
+            message = evaluation.run_sync(run) if sync else evaluation.advance(run)
+        except evaluation.EvaluationError as e:
+            raise click.ClickException(str(e)) from e
+        click.echo(message)
+        if not sync:
+            click.echo(f"結果が届いたら `flask evaluate advance {run.run_id}` で次の段階に進めます")
+
+    @evaluate.command("advance")
+    @click.argument("run_id")
+    def evaluate_advance(run_id: str) -> None:
+        """Batch の結果を確認し、届いていれば次の段階を送る。"""
+        try:
+            click.echo(evaluation.advance(evaluation.Run.load(run_id)))
+        except evaluation.EvaluationError as e:
+            raise click.ClickException(str(e)) from e
