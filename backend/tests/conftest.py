@@ -24,10 +24,19 @@ def _ensure_test_database() -> None:
             conn.execute(text(f'CREATE DATABASE "{test_db}"'))
     engine.dispose()
 
+    # db/init の SQL は開発用の DB にしか実行されないため、テスト用の DB にも pgvector を入れる
+    engine = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    engine.dispose()
+
 
 class TestConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = TEST_DATABASE_URL
+    # テストから OpenAI API や S3 を呼ばないようにする（呼ぶ処理はテストの中でモックにする）
+    OPENAI_API_KEY = "test-key"
+    DOCUMENTS_BUCKET = ""
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -36,8 +45,9 @@ def _test_database():
 
 
 @pytest.fixture
-def app():
+def app(tmp_path):
     app = create_app(TestConfig)
+    app.config["DOCUMENTS_DIR"] = str(tmp_path / "documents")
     with app.app_context():
         db.drop_all()
         db.create_all()
@@ -49,3 +59,36 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def make_user(app):
+    """利用者を作る。部署と権限を変えて、公開範囲や権限のテストに使う。"""
+    from app.models import User
+
+    count = 0
+
+    def make(department: str = "営業部", role: str = "user", **fields) -> User:
+        nonlocal count
+        count += 1
+        user = User(
+            employee_id=fields.pop("employee_id", f"T{count:04d}"),
+            name=fields.pop("name", f"テスト 利用者{count}"),
+            email=fields.pop("email", f"user{count}@example.co.jp"),
+            department=department,
+            role=role,
+            handles_department=fields.pop("handles_department", None),
+            status=fields.pop("status", "active"),
+        )
+        user.set_password(fields.pop("password", "test-password-123"))
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    return make
+
+
+def login_as(client, user) -> None:
+    """パスワードの照合を省いてログイン状態にする（認証以外のテスト用）。"""
+    with client.session_transaction() as session:
+        session["user_id"] = user.id

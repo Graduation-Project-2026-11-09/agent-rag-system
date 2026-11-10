@@ -1,14 +1,22 @@
 """flask コマンドに追加する管理用コマンド。"""
 
+import json
 import os
+from datetime import date
+from pathlib import Path
 
 import click
 from flask import Flask
 from sqlalchemy import select
 
+from . import evaluation
 from .extensions import db
-from .models import User
+from .ingestion.registration import RegistrationError, register_document
+from .models import Document, User
 from .models.user import ROLES
+
+# ダミー資料（架空の会社の規程・マニュアル）。seed/build_documents.py で各形式のファイルを作る
+SEED_DOCUMENTS_DIR = Path(__file__).resolve().parent.parent / "seed" / "documents"
 
 # モックアップ（frontend/src/mocks/db.js）と同じダミーの利用者。開発・stg の動作確認に使う
 SEED_USERS = [
@@ -101,3 +109,133 @@ def register_cli(app: Flask) -> None:
         db.session.add(user)
         db.session.commit()
         click.echo(f"create-user: {email}（{role}）を登録しました")
+
+    @app.cli.command("import-document")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+    @click.option("--title", default=None, help="資料名（省略時はファイル名）")
+    @click.option("--department", required=True, help="資料を管理する部署")
+    @click.option("--category", default=None, help="資料の分類")
+    @click.option(
+        "--visible-department",
+        "visible_departments",
+        multiple=True,
+        help="閲覧できる部署（複数指定可）。省略すると全員が閲覧できる",
+    )
+    @click.option("--tag", "tags", multiple=True, help="タグ（複数指定可）")
+    def import_document(
+        path: Path,
+        title: str | None,
+        department: str,
+        category: str | None,
+        visible_departments: tuple[str, ...],
+        tags: tuple[str, ...],
+    ) -> None:
+        """資料ファイルを登録し、取り込み待ちにする（取り込みは worker が行う）。
+
+        資料管理画面ができるまで、ダミー資料の登録と動作確認に使う。
+        本物の社内資料は登録しないこと（OpenAI API に送られるため）。
+        """
+        try:
+            document = register_document(
+                path.name,
+                path.read_bytes(),
+                title=title or path.stem,
+                department=department,
+                category=category,
+                visibility_type="departments" if visible_departments else "all",
+                visible_departments=visible_departments,
+                tags=tags,
+            )
+        except RegistrationError as e:
+            raise click.ClickException(str(e)) from e
+        click.echo(f"import-document: 「{document.title}」を登録しました（id={document.id}）")
+
+    @app.cli.command("seed-documents")
+    @click.option(
+        "--dir",
+        "seed_dir",
+        type=click.Path(exists=True, file_okay=False, path_type=Path),
+        default=SEED_DOCUMENTS_DIR,
+        show_default=True,
+        help="manifest.json と files/ があるフォルダ",
+    )
+    def seed_documents(seed_dir: Path) -> None:
+        """ダミー資料をまとめて登録し、取り込み待ちにする（取り込みは worker が行う）。
+
+        同じ資料名の資料が登録済みなら何もしない。登録者は、資料を管理する部署の担当者にする。
+        """
+        manifest = json.loads((seed_dir / "manifest.json").read_text(encoding="utf-8"))
+        created = 0
+        for entry in manifest["documents"]:
+            if db.session.scalar(select(Document).where(Document.title == entry["title"])):
+                continue
+            files = list((seed_dir / "files").glob(f"{entry['slug']}.*"))
+            if len(files) != 1:
+                raise click.ClickException(
+                    f"{entry['slug']} のファイルが見つかりません（seed/build_documents.py で作成）"
+                )
+            uploader = db.session.scalar(
+                select(User).where(
+                    User.role.in_(("staff", "admin")),
+                    User.handles_department == entry["department"],
+                )
+            )
+            visible_departments = entry.get("visibleDepartments") or []
+            try:
+                register_document(
+                    files[0].name,
+                    files[0].read_bytes(),
+                    title=entry["title"],
+                    department=entry["department"],
+                    category=entry.get("category"),
+                    visibility_type="departments" if visible_departments else "all",
+                    visible_departments=visible_departments,
+                    tags=entry.get("tags", []),
+                    effective_date=(
+                        date.fromisoformat(entry["effectiveDate"])
+                        if entry.get("effectiveDate")
+                        else None
+                    ),
+                    uploaded_by=uploader,
+                )
+            except RegistrationError as e:
+                raise click.ClickException(f"{entry['slug']}: {e}") from e
+            created += 1
+        click.echo(f"seed-documents: {created} 件登録しました（取り込みは worker が行います）")
+
+    @app.cli.group("evaluate")
+    def evaluate() -> None:
+        """評価用の質問セットで、通常の RAG と検索Agent を比べる（app/evaluation.py）。"""
+
+    @evaluate.command("start")
+    @click.option(
+        "--mode",
+        "modes",
+        multiple=True,
+        type=click.Choice(evaluation.MODES),
+        help="比べる方式（省略すると両方）",
+    )
+    @click.option("--question", "question_ids", multiple=True, help="質問の ID（省略すると全問）")
+    @click.option(
+        "--sync", is_flag=True, help="Batch API を使わず 1 問ずつ実行する（回答時間を測れる）"
+    )
+    def evaluate_start(modes: tuple[str, ...], question_ids: tuple[str, ...], sync: bool) -> None:
+        """評価を始める。Batch API の場合は、最初の段階を送るところまで行う。"""
+        try:
+            run = evaluation.create_run(list(modes or evaluation.MODES), list(question_ids))
+            click.echo(f"評価の実行 ID: {run.run_id}（{len(run.items)} 件）")
+            message = evaluation.run_sync(run) if sync else evaluation.advance(run)
+        except evaluation.EvaluationError as e:
+            raise click.ClickException(str(e)) from e
+        click.echo(message)
+        if not sync:
+            click.echo(f"結果が届いたら `flask evaluate advance {run.run_id}` で次の段階に進めます")
+
+    @evaluate.command("advance")
+    @click.argument("run_id")
+    def evaluate_advance(run_id: str) -> None:
+        """Batch の結果を確認し、届いていれば次の段階を送る。"""
+        try:
+            click.echo(evaluation.advance(evaluation.Run.load(run_id)))
+        except evaluation.EvaluationError as e:
+            raise click.ClickException(str(e)) from e

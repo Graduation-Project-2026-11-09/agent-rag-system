@@ -34,9 +34,14 @@ export default function NotificationSettingsPage() {
 
   const save = async () => {
     setSaving(true);
-    await noticeApi.saveSettings(settings);
-    setSaving(false);
-    toast('通知設定を保存しました');
+    try {
+      setSettings(await noticeApi.saveSettings(settings));
+      toast('通知設定を保存しました');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
