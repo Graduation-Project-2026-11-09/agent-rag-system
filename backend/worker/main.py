@@ -21,6 +21,7 @@ def run_once() -> None:
 
 
 def main() -> None:
+    """worker を起動し、POLL_INTERVAL_SEC ごとに待っている処理を行う。"""
     app = create_app()
     log.info("started")
     with app.app_context():
