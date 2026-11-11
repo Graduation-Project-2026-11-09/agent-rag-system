@@ -20,19 +20,25 @@ docs/       設計書・API 仕様書
 
 ## 開発環境のセットアップ
 
+初めての人は [docs/development/setup.md](docs/development/setup.md) の手順どおりに進める。
+
 ### 必要なもの
-- Windows 11 + WSL2
+- Windows 11 + WSL2（Ubuntu は不要）
 - Docker Desktop（起動しておく）
-- Git、VS Code
+- Git、GitHub CLI、VS Code
 
 ### 起動
 
-```sh
+```powershell
 git clone https://github.com/Graduation-Project-2026-11-09/agent-rag-system.git
 cd agent-rag-system
-cp .env.example .env      # OPENAI_API_KEY は各自で設定する
-docker compose up --build
+copy .env.example .env
+docker compose up --build -d
+docker compose exec api flask db upgrade   # DB のテーブルを作る
+docker compose exec api flask seed-users   # ダミー利用者を登録する（ログイン用）
 ```
+
+http://localhost:5173 で `yamada@example.co.jp` / `password123` でログインできれば OK。
 
 | URL | 内容 |
 |---|---|
