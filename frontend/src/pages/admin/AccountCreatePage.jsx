@@ -90,16 +90,9 @@ function SingleForm() {
       )}
 
       <h3>初回ログイン</h3>
-      <div className="radio-row">
-        {/* 招待メールはメールを送る仕組みができるまで準備中（docs/architecture/ai.md） */}
-        <label className="radio muted"><input type="radio" value="invite" disabled /> 招待メールを送信（準備中）</label>
-        <label className="radio"><input type="radio" value="password" checked={form.passwordMode === 'password'} onChange={set('passwordMode')} /> 初期パスワードを設定</label>
-      </div>
-      {form.passwordMode === 'password' && (
-        <Field label="初期パスワード" error={errors.password} hint="12文字以上。本人には安全な方法で伝えてください">
-          <input className="input" type="password" value={form.password} onChange={set('password')} />
-        </Field>
-      )}
+      <Field label="初期パスワード" error={errors.password} hint="12文字以上。本人には安全な方法で伝えてください">
+        <input className="input" type="password" value={form.password} onChange={set('password')} />
+      </Field>
 
       <div className="form-actions">
         <button type="button" className="btn" onClick={() => navigate('/admin/accounts')}>キャンセル</button>
