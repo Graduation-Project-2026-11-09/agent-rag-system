@@ -14,8 +14,7 @@ from .helpers import BadRequest, error, json_body, required_text
 bp = Blueprint("users", __name__)
 
 MIN_PASSWORD_LENGTH = 12  # 情報セキュリティポリシー第12条と同じ
-# 招待メール・パスワード再設定はメールを送る仕組みができるまで作らない（ai.md 参照）
-INVITE_NOT_READY = "招待メールは準備中です。「パスワードを設定」を選んでください"
+# メールは送らないため、パスワードはいつも管理者が設定する（作成・一括登録・再設定）
 
 
 class Conflict(Exception):
@@ -98,19 +97,22 @@ def _ensure_unique(email: str, employee_id: str, exclude_id: int | None = None) 
             raise Conflict(f"{label} はすでに登録されています")
 
 
-def _set_password(user: User, password: str) -> None:
+def _validate_password(value) -> str:
+    password = str(value or "")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise BadRequest(f"パスワードは {MIN_PASSWORD_LENGTH} 文字以上にしてください")
-    user.set_password(password)
+    return password
+
+
+def _set_password(user: User, password: str) -> None:
+    user.set_password(_validate_password(password))
 
 
 @bp.post("/admin/users")
 @roles_required("admin")
 def create_user():
-    """アカウントを作る。パスワードは管理者が設定する（招待メールは準備中）。"""
+    """アカウントを作る。パスワードは管理者が設定する。"""
     data = json_body()
-    if data.get("passwordMode", "password") == "invite":
-        raise BadRequest(INVITE_NOT_READY)
     profile = _validate_profile(data)
     _ensure_unique(profile["email"], profile["employee_id"])
     user = User(**profile, status="active")
@@ -125,12 +127,18 @@ def create_user():
 def bulk_create():
     """CSV の内容でアカウントをまとめて作る。
 
-    招待メールが準備中のため、作ったアカウントは「招待中」（パスワード未設定・ログイン不可）になる。
+    全員に、画面で入力した共通の初期パスワードを設定し、「有効」で登録する（すぐにログインできる）。
     行ごとに確認し、問題のある行は飛ばしてエラーとして返す。
     """
-    rows = json_body().get("users")
+    data = json_body()
+    rows = data.get("users")
     if not isinstance(rows, list):
         raise BadRequest("登録する行がありません")
+    password = _validate_password(data.get("password"))
+    # 全員が同じパスワードなので、ハッシュは 1 回だけ計算して使い回す
+    # （argon2 は 1 回ごとに時間がかかる）
+    hasher = User()
+    hasher.set_password(password)
     created, errors = 0, []
     for number, row in enumerate(rows, start=1):
         try:
@@ -141,7 +149,7 @@ def bulk_create():
         except (BadRequest, Conflict) as e:
             errors.append({"row": number, "message": str(e)})
             continue
-        db.session.add(User(**profile, status="invited"))
+        db.session.add(User(**profile, status="active", password_hash=hasher.password_hash))
         db.session.flush()  # 同じ CSV の中の重複も検出できるようにする
         created += 1
     _commit_unique()
@@ -151,12 +159,16 @@ def bulk_create():
 @bp.patch("/admin/users/<int:user_id>")
 @roles_required("admin")
 def update_user(user_id: int):
-    """アカウントの内容を変える。status を変えると利用停止・再開になる。"""
+    """アカウントの内容を変える。
+
+    status を変えると利用停止・再開、password を送るとパスワードの再設定になる。
+    """
     user = db.session.get(User, user_id)
     if user is None:
         return error("アカウントが見つかりません", 404)
     data = json_body()
     # 先にすべての値を確かめてから変更する（途中で 400 にしたとき、変更が残らないように）
+    password = _validate_password(data["password"]) if "password" in data else None
     profile = _validate_profile({**_profile_of(user), **data})
     status = data.get("status", user.status)
     if status not in STATUSES:
@@ -169,6 +181,8 @@ def update_user(user_id: int):
     for key, value in profile.items():
         setattr(user, key, value)
     user.status = status
+    if password is not None:
+        user.set_password(password)
     _commit_unique()
     return jsonify(user.to_dict())
 

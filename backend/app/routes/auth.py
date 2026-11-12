@@ -31,8 +31,6 @@ def login():
         return jsonify(message=INVALID_CREDENTIALS), 401
     if user.status == "suspended":
         return jsonify(message="このアカウントは利用停止中です"), 403
-    if user.status == "invited":
-        return jsonify(message="招待メールからパスワードを設定してください"), 403
 
     user.last_login_at = datetime.now(UTC)
     db.session.commit()

@@ -17,7 +17,7 @@ export const users = [
   { id: 'u9', employeeId: 'E10467', name: '中村 翔', email: 'nakamura@example.co.jp', department: '営業部', role: 'user', handlesDepartment: null, status: 'suspended', createdAt: '2025-04-01T09:00:00', lastLoginAt: '2026-06-30T18:00:00' },
   { id: 'u10', employeeId: 'E10498', name: '小林 未来', email: 'kobayashi@example.co.jp', department: '営業部', role: 'user', handlesDepartment: null, status: 'active', createdAt: '2025-10-01T09:00:00', lastLoginAt: '2026-10-02T08:30:00' },
   { id: 'u11', employeeId: 'E10520', name: '加藤 拓也', email: 'kato@example.co.jp', department: '情報システム部', role: 'staff', handlesDepartment: '情報システム部', status: 'active', createdAt: '2025-10-01T09:00:00', lastLoginAt: '2026-10-02T09:00:00' },
-  { id: 'u12', employeeId: 'E10601', name: '吉田 結衣', email: 'yoshida@example.co.jp', department: 'マーケティング部', role: 'user', handlesDepartment: null, status: 'invited', createdAt: '2026-09-28T14:00:00', lastLoginAt: null },
+  { id: 'u12', employeeId: 'E10601', name: '吉田 結衣', email: 'yoshida@example.co.jp', department: 'マーケティング部', role: 'user', handlesDepartment: null, status: 'active', createdAt: '2026-09-28T14:00:00', lastLoginAt: null },
   { id: 'u13', employeeId: 'E10602', name: '山本 蓮', email: 'yamamoto@example.co.jp', department: '開発部', role: 'user', handlesDepartment: null, status: 'invited', createdAt: '2026-09-28T14:00:00', lastLoginAt: null },
 ];
 

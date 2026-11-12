@@ -70,11 +70,11 @@ erDiagram
 | employee_id | varchar(32) | NN, UQ | 社員番号 |
 | name | varchar(100) | NN | 氏名 |
 | email | varchar(255) | NN, UQ, IDX | ログイン ID。アプリで小文字にしてから保存する |
-| password_hash | varchar(255) | | argon2 のハッシュ。招待中（CSV 一括登録）は NULL |
+| password_hash | varchar(255) | | argon2 のハッシュ。作成・一括登録のときに管理者が決めたパスワードを必ず設定する（NULL の利用者はログインできない） |
 | department | varchar(100) | NN | 所属部署。閲覧できる資料の判定に使う |
 | role | varchar(16) | NN | `user`（一般利用者）/ `staff`（部署担当者）/ `admin`（管理者） |
 | handles_department | varchar(100) | | 対応する部署。staff・admin が持つ。user は NULL（アプリで設定） |
-| status | varchar(16) | NN | `active` / `invited`（パスワード未設定）/ `suspended`（利用停止） |
+| status | varchar(16) | NN | `active`（利用中）/ `suspended`（利用停止） |
 | created_at | timestamptz | NN, 既定 now() | |
 | last_login_at | timestamptz | | |
 
@@ -284,7 +284,7 @@ erDiagram
 
 | 項目 | 今の作り | 影響 |
 |---|---|---|
-| メール | 送らない（招待・パスワード再設定・お知らせのメール配信・通知） | 招待とパスワード再設定の画面は「準備中」。CSV 一括登録のアカウントは「招待中」で、パスワードを設定するまでログインできない |
+| メール | 送らない（お知らせのメール配信・通知）。招待メールの仕組みもなくした | パスワードは管理者が設定する（個別作成・CSV 一括登録は共通の初期パスワード・パスワード再設定）。「招待中」の状態はない |
 | 定期処理 | 作らない（未対応の問い合わせの検知・週次レポート） | 予約配信は表示のときに判定する |
 | 部署のマスタ | テーブルにしない（文字列） | 部署名を変えるときは、users・documents・inquiries・notices の部署名も更新するマイグレーションが必要 |
 | 初回ログイン時のパスワード変更 | 作らない | 管理者が決めたパスワードをそのまま使う |
@@ -301,6 +301,7 @@ erDiagram
 | `d79adad5597a` | documents・document_versions・document_chunks（halfvec(3072) と HNSW 索引） |
 | `952c4bfbea6b` | conversations・messages |
 | `c44ed2324f65` | inquiries・inquiry_replies・notices・notice_reads・app_settings |
+| `82e081ed0ed8` | 利用者の「招待中」（invited）をなくす（残っていた招待中の利用者は「利用停止」にする） |
 
 マイグレーションは `docker compose exec api flask db migrate -m "説明"` で自動生成し、生成されたファイルを必ず読んで確認する（halfvec の型や HNSW 索引の演算子クラスは手で直すことがある）。stg では main にマージしたあとの自動デプロイで `flask db upgrade` が実行される。
 

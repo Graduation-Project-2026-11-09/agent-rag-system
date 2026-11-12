@@ -32,7 +32,7 @@
 // User
 { "id": "u1", "employeeId": "E10234", "name": "山田 花子", "email": "yamada@example.co.jp",
   "department": "営業部", "role": "user", "handlesDepartment": null,
-  "status": "active", // active | invited | suspended
+  "status": "active", // active | suspended
   "createdAt": "...", "lastLoginAt": "..." }
 ```
 
@@ -178,11 +178,12 @@ def send_message(cid):
 | メソッド | パス | リクエスト | レスポンス |
 |---|---|---|---|
 | GET | `/admin/users?q=&department=&role=&status=` | — | `User[]` |
-| POST | `/admin/users` | `{ employeeId, name, email, department, role, handlesDepartment, passwordMode: "password", password }` | `User`（重複は 409。`passwordMode: "invite"` は準備中のため 400） |
-| POST | `/admin/users/bulk` | `{ users: [{ employeeId, name, email, department, role }] }` | `{ created, errors: [{ row, message }] }` |
-| PATCH | `/admin/users/:id` | `User` の一部（`status` の変更で利用停止・再開） | `User` |
+| POST | `/admin/users` | `{ employeeId, name, email, department, role, handlesDepartment, password }` | `User`（重複は 409。パスワードが 12 文字未満は 400） |
+| POST | `/admin/users/bulk` | `{ users: [{ employeeId, name, email, department, role }], password }` | `{ created, errors: [{ row, message }] }`（全員に共通の初期パスワード `password` を設定し、`active` で登録する） |
+| PATCH | `/admin/users/:id` | `User` の一部（`status` の変更で利用停止・再開）。`password` を送るとパスワードの再設定 | `User` |
 | DELETE | `/admin/users/:id` | — | 204 |
-| POST | `/admin/users/:id/password-reset` | — | 準備中（メールを送る仕組みができるまで作らない） |
+
+メールは送らないため、パスワードはいつも管理者が設定する（作成・一括登録・再設定）。本人には安全な方法で伝える。
 
 ## ドキュメント
 
@@ -233,5 +234,5 @@ def send_message(cid):
 
 費用の確認のため、`Log` には `mode`（agentic / basic）・`inputTokens`・`outputTokens`・`costUsd` を、`summary` には `totalCostUsd` も含めます。`Log` は AI の回答（`messages`）から作り、`result` は「問い合わせを送った → inquiry」「資料に答えがなかった・一部だけ → no_answer」「それ以外 → resolved」で決めます。
 
-## メール・定期処理（今は作らない）
-メールの送信（招待・パスワード再設定・お知らせのメール配信・通知）と、定期処理（未対応の問い合わせの検知・週次レポート）は作りません。お知らせの予約は「配信日時を過ぎたら表示する」だけで実現し、通知設定は保存だけできます。
+## メール・定期処理（作らない）
+メールの送信（お知らせのメール配信・通知）と、定期処理（未対応の問い合わせの検知・週次レポート）は作りません（卒業制作の範囲外）。招待メールは使わず、パスワードは管理者が設定します。お知らせの予約は「配信日時を過ぎたら表示する」だけで実現し、通知設定は保存だけできます。

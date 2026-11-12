@@ -324,24 +324,30 @@ function insertUser(payload) {
   const user = {
     id: genId('u'), employeeId: payload.employeeId, name: payload.name, email: payload.email, department: payload.department,
     role: payload.role, handlesDepartment: payload.role === 'user' ? null : payload.handlesDepartment || payload.department,
-    status: payload.passwordMode === 'invite' ? 'invited' : 'active', createdAt: now(), lastLoginAt: null,
+    status: 'active', createdAt: now(), lastLoginAt: null,
   };
   db.users.push(user);
   return user;
 }
+// Flask と同じく、パスワードは 12 文字以上（モックでは保存しない）
+function checkPassword(password) {
+  if (!password || password.length < 12) throw new MockError(400, 'パスワードは 12 文字以上にしてください');
+}
 export async function createUser(payload) {
   await delay(500);
   requireRole('admin');
+  checkPassword(payload.password);
   return clone(insertUser(payload));
 }
-export async function bulkCreateUsers(rows) {
+export async function bulkCreateUsers(rows, password) {
   await delay(800);
   requireRole('admin');
+  checkPassword(password);
   const errors = [];
   let created = 0;
   rows.forEach((row, i) => {
     try {
-      insertUser({ ...row, passwordMode: 'invite' });
+      insertUser(row);
       created++;
     } catch (e) {
       errors.push({ row: i + 1, message: e.message });
@@ -352,8 +358,10 @@ export async function bulkCreateUsers(rows) {
 export async function updateUser(id, payload) {
   await delay(300);
   requireRole('admin');
+  const { password, ...profile } = payload;
+  if (password !== undefined) checkPassword(password);
   const u = db.users.find((x) => x.id === id);
-  Object.assign(u, payload);
+  Object.assign(u, profile);
   if (u.role === 'user') u.handlesDepartment = null;
   return clone(u);
 }
@@ -362,11 +370,6 @@ export async function deleteUser(id) {
   const me = requireRole('admin');
   if (me.id === id) throw new MockError(400, '自分自身のアカウントは削除できません');
   db.users.splice(db.users.findIndex((u) => u.id === id), 1);
-  return null;
-}
-export async function sendPasswordReset() {
-  await delay(400);
-  requireRole('admin');
   return null;
 }
 
