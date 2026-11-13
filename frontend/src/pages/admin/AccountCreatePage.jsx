@@ -8,7 +8,7 @@ import PageHeader from '../../components/common/PageHeader';
 import Field from '../../components/common/Field';
 import { ROLES } from '../../constants';
 
-const EMPTY = { employeeId: '', name: '', email: '', department: '', role: 'user', handlesDepartment: '', passwordMode: 'password', password: '' };
+const EMPTY = { employeeId: '', name: '', email: '', department: '', role: 'user', handlesDepartment: '', password: '' };
 
 function SingleForm() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ function SingleForm() {
     if (!form.name.trim()) e.name = '氏名を入力してください';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) e.email = 'メールアドレスの形式が正しくありません';
     if (!form.department) e.department = '所属部署を選択してください';
-    if (form.passwordMode === 'password' && form.password.length < 12) e.password = '12文字以上で入力してください';
+    if (form.password.length < 12) e.password = '12文字以上で入力してください';
     setErrors(e);
     return !Object.keys(e).length;
   };
@@ -90,16 +90,9 @@ function SingleForm() {
       )}
 
       <h3>初回ログイン</h3>
-      <div className="radio-row">
-        {/* 招待メールはメールを送る仕組みができるまで準備中（docs/architecture/ai.md） */}
-        <label className="radio muted"><input type="radio" value="invite" disabled /> 招待メールを送信（準備中）</label>
-        <label className="radio"><input type="radio" value="password" checked={form.passwordMode === 'password'} onChange={set('passwordMode')} /> 初期パスワードを設定</label>
-      </div>
-      {form.passwordMode === 'password' && (
-        <Field label="初期パスワード" error={errors.password} hint="12文字以上。本人には安全な方法で伝えてください">
-          <input className="input" type="password" value={form.password} onChange={set('password')} />
-        </Field>
-      )}
+      <Field label="初期パスワード" error={errors.password} hint="12文字以上。本人には安全な方法で伝えてください">
+        <input className="input" type="password" value={form.password} onChange={set('password')} />
+      </Field>
 
       <div className="form-actions">
         <button type="button" className="btn" onClick={() => navigate('/admin/accounts')}>キャンセル</button>
@@ -126,6 +119,7 @@ function BulkForm() {
   const navigate = useNavigate();
   const toast = useToast();
   const [rows, setRows] = useState([]);
+  const [password, setPassword] = useState('');
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -140,9 +134,9 @@ function BulkForm() {
   const submit = async () => {
     setSaving(true);
     try {
-      const res = await userApi.bulkCreate(rows);
+      const res = await userApi.bulkCreate(rows, password);
       setResult(res);
-      if (res.created) toast(`${res.created} 件のアカウントを「招待中」で登録しました`);
+      if (res.created) toast(`${res.created} 件のアカウントを登録しました`);
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -152,7 +146,7 @@ function BulkForm() {
 
   return (
     <div className="card form-card stack">
-      <p className="muted">CSVファイルで複数のアカウントを一括登録します。登録したアカウントは「招待中」になります。招待メールは準備中のため、送信されるようになるまではログインできません。</p>
+      <p className="muted">CSVファイルで複数のアカウントを一括登録します。全員に下の初期パスワードを設定し、すぐにログインできる状態で登録します。</p>
       <pre className="code-box">{SAMPLE_CSV}</pre>
       <div className="row gap-sm">
         <label className="btn">
@@ -177,6 +171,14 @@ function BulkForm() {
           </table>
         </div>
       )}
+      <Field
+        label="初期パスワード（全員共通）"
+        required
+        error={password && password.length < 12 ? '12文字以上で入力してください' : undefined}
+        hint="12文字以上。本人には安全な方法で伝えてください"
+      >
+        <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      </Field>
       {result?.errors.length > 0 && (
         <div className="warn-box block">
           {result.errors.map((e) => <p key={e.row}>{e.row}行目：{e.message}</p>)}
@@ -184,7 +186,7 @@ function BulkForm() {
       )}
       <div className="form-actions">
         <button className="btn" onClick={() => navigate('/admin/accounts')}>一覧へ戻る</button>
-        <button className="btn btn-primary" disabled={!rows.length || !!result || saving} onClick={submit}>{saving ? '登録中…' : `${rows.length} 件を登録`}</button>
+        <button className="btn btn-primary" disabled={!rows.length || password.length < 12 || !!result || saving} onClick={submit}>{saving ? '登録中…' : `${rows.length} 件を登録`}</button>
       </div>
     </div>
   );

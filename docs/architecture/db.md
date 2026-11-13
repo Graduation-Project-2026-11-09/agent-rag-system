@@ -60,7 +60,7 @@ erDiagram
 
 ## 4. テーブル定義
 
-記号: PK＝主キー、NN＝NOT NULL、UQ＝一意、IDX＝索引あり
+記号: PK＝主キー、NN＝NOT NULL、UQ＝一意、IDX＝索引あり、既定＝DB の初期値（「（アプリ）」はアプリ（SQLAlchemy）が入れる初期値）
 
 ### 4.1 users（利用者）
 
@@ -69,12 +69,12 @@ erDiagram
 | id | integer | PK | |
 | employee_id | varchar(32) | NN, UQ | 社員番号 |
 | name | varchar(100) | NN | 氏名 |
-| email | varchar(255) | NN, UQ, IDX | ログイン ID。アプリで小文字にしてから保存する |
-| password_hash | varchar(255) | | argon2 のハッシュ。招待中（CSV 一括登録）は NULL |
+| email | varchar(255) | NN | 一意索引（ix_users_email）。ログイン ID。アプリで小文字にしてから保存する |
+| password_hash | varchar(255) | | argon2 のハッシュ。作成・一括登録・パスワード再設定で管理者が決めたパスワードを必ず設定する（CLI は環境変数の値）。招待中から利用停止に移した利用者は NULL のままで、ログインできない |
 | department | varchar(100) | NN | 所属部署。閲覧できる資料の判定に使う |
-| role | varchar(16) | NN | `user`（一般利用者）/ `staff`（部署担当者）/ `admin`（管理者） |
-| handles_department | varchar(100) | | 対応する部署。staff・admin が持つ。user は NULL（アプリで設定） |
-| status | varchar(16) | NN | `active` / `invited`（パスワード未設定）/ `suspended`（利用停止） |
+| role | varchar(16) | NN, 既定 `user`（アプリ） | `user`（一般利用者）/ `staff`（部署担当者）/ `admin`（管理者） |
+| handles_department | varchar(100) | | 対応する部署。staff・admin が持ち、指定がなければ所属部署。user は NULL（アプリで設定） |
+| status | varchar(16) | NN, 既定 `active`（アプリ） | `active`（利用中）/ `suspended`（利用停止） |
 | created_at | timestamptz | NN, 既定 now() | |
 | last_login_at | timestamptz | | |
 
@@ -88,16 +88,17 @@ erDiagram
 | title | varchar(200) | NN | 資料名 |
 | category | varchar(100) | | 分類（`masters.DOCUMENT_CATEGORIES`） |
 | department | varchar(100) | NN | 管理部署。staff はこの部署の資料だけ管理できる |
-| visibility_type | varchar(16) | NN, CHECK (`all` / `departments`) | 公開範囲 |
-| visible_departments | varchar(100)[] | NN | `departments` のとき閲覧できる部署。`all` のときは空 |
-| tags | varchar(50)[] | NN | タグ |
-| status | varchar(16) | NN, IDX, CHECK (`processing` / `indexed` / `error`) | 取り込みの状態 |
+| visibility_type | varchar(16) | NN, 既定 `all`（アプリ）, CHECK (`all` / `departments`) | 公開範囲 |
+| visible_departments | varchar(100)[] | NN, 既定 {}（アプリ） | `departments` のとき閲覧できる部署。`all` のときは空 |
+| tags | varchar(50)[] | NN, 既定 {}（アプリ） | タグ |
+| status | varchar(16) | NN, IDX, 既定 `processing`（アプリ）, CHECK (`processing` / `indexed` / `error`) | 取り込みの状態 |
 | processing_stage | varchar(16) | | processing 中の段階: `uploaded` / `extracting` / `chunking` / `embedding` |
 | processing_started_at | timestamptz | | worker が取り込みを始めた日時。30 分たっても終わらなければ取り込み直す |
-| processing_attempts | integer | NN, 既定 0 | 取り込みを始めた回数。3 回を超えたら error にする（毎回 worker が止まる資料で無限に繰り返さないため） |
+| processing_attempts | integer | NN, 既定 0 | 取り込みを始めた回数。3 回始めても終わらなければ error にする（毎回 worker が止まる資料で無限に繰り返さないため） |
 | error_message | text | | 取り込みに失敗した理由（画面に表示する） |
-| current_version | integer | NN | 最新の版の番号 |
-| created_at / updated_at | timestamptz | NN, 既定 now() | |
+| current_version | integer | NN, 既定 1（アプリ） | 最新の版の番号 |
+| created_at | timestamptz | NN, 既定 now() | |
+| updated_at | timestamptz | NN, 既定 now() | 変更のたびにアプリが現在の日時にする（onupdate） |
 
 #### document_versions（版）
 
@@ -116,7 +117,7 @@ erDiagram
 | uploaded_by_id | integer | FK → users（SET NULL） | 登録した人 |
 | created_at | timestamptz | NN, 既定 now() | |
 
-今は新しい版を登録する画面がないため、版は常に 1（10 章）。
+今は新しい版を登録する画面・API がないため、版は常に 1。
 
 #### document_chunks（チャンク）
 
@@ -144,7 +145,8 @@ erDiagram
 | id | integer | PK | |
 | user_id | integer | NN, IDX, FK → users（CASCADE） | 本人だけが見られる |
 | title | varchar(200) | NN | 最初の質問の先頭 24 文字 |
-| created_at / updated_at | timestamptz | NN, 既定 now() | updated_at は発言のたびに更新し、一覧の並び順に使う |
+| created_at | timestamptz | NN, 既定 now() | |
+| updated_at | timestamptz | NN, 既定 now() | 発言のたびにアプリ（routes/chat.py）で更新し、一覧の並び順に使う |
 
 #### messages（発言）
 
@@ -165,17 +167,16 @@ erDiagram
 | answer_status | varchar(16) | | `answered` / `partial` / `not_found` |
 | mode | varchar(16) | | `agentic`（検索Agent）/ `basic`（通常の RAG） |
 | feedback | varchar(8) | | `good` / `bad` / NULL |
-| input_tokens / output_tokens | integer | | 使ったトークン数（埋め込みを含む） |
+| input_tokens | integer | | 入力のトークン数（埋め込みを含む） |
+| output_tokens | integer | | 出力のトークン数（推論のトークンを含む） |
 | cost_usd | double precision | | 費用の目安（料金は `backend/app/ai/llm.py` の表） |
 | created_at | timestamptz | NN, IDX, 既定 now() | 利用履歴の期間の絞り込みに使う |
 
 **利用履歴**（`GET /admin/logs`）は、`role = 'assistant'` の行を会話・利用者と結合して作る。`result` は次のとおり。
 
-| result | 条件 |
-|---|---|
-| `inquiry` | `inquiry_id` がある（その回答から問い合わせを送った） |
-| `no_answer` | `answer_status` が `not_found` か `partial` |
-| `resolved` | それ以外 |
+- `inquiry`: `inquiry_id` がある（その回答から問い合わせを送った）
+- `no_answer`: `answer_status` が `not_found` か `partial`
+- `resolved`: それ以外
 
 `inquiry_id` に外部キーを付けていないのは、`messages` と `inquiries` が互いを参照する形になるのを避けるため（問い合わせは削除しないので、参照先がなくなることはない）。
 
@@ -191,12 +192,13 @@ erDiagram
 | department | varchar(100) | NN, IDX | 宛先の部署 |
 | subject | varchar(200) | NN | 件名 |
 | body | text | NN | 本文（利用者が確認・編集したもの） |
-| status | varchar(16) | NN, IDX, CHECK (`open` / `in_progress` / `resolved`) | 対応状況 |
+| status | varchar(16) | NN, IDX, 既定 `open`（アプリ）, CHECK (`open` / `in_progress` / `resolved`) | 対応状況 |
 | assignee | varchar(100) | | 担当者の氏名 |
-| context | jsonb | NN | 元の質問・確認済みの資料・AI の回答の要約（画面から送られた値） |
-| created_at / updated_at | timestamptz | NN, 既定 now() | |
+| context | jsonb | NN, 既定 {}（アプリ） | 元の質問・確認済みの資料・AI の回答の要約（画面から送られた値） |
+| created_at | timestamptz | NN, 既定 now() | |
+| updated_at | timestamptz | NN, 既定 now() | 変更のたびにアプリが現在の日時にする（onupdate） |
 
-#### inquiry_replies（回答）
+#### inquiry_replies（問い合わせの回答）
 
 | カラム | 型 | 制約 | 説明 |
 |---|---|---|---|
@@ -217,12 +219,12 @@ erDiagram
 | id | integer | PK | |
 | title | varchar(200) | NN | |
 | body | text | NN | |
-| priority | varchar(16) | NN | `normal` / `important` |
-| target_departments | varchar(100)[] | NN | 配信先の部署。空なら全員 |
-| channels | varchar(16)[] | NN | `in_app` / `email`。email は保存するだけで送らない |
+| priority | varchar(16) | NN, 既定 `normal`（アプリ） | `normal` / `important` |
+| target_departments | varchar(100)[] | NN, 既定 {}（アプリ） | 配信先の部署。空なら全員 |
+| channels | varchar(16)[] | NN, 既定 {}（アプリ） | `in_app` / `email`。email は保存するだけで送らない |
 | publish_at | timestamptz | IDX | 配信日時。下書きは NULL |
 | expire_at | timestamptz | | 掲載の終了日時 |
-| is_draft | boolean | NN | 下書き |
+| is_draft | boolean | NN, 既定 false（アプリ） | 下書き |
 | created_by_id | integer | FK → users（SET NULL） | |
 | created_by_name | varchar(100) | NN | 作った時点の氏名の写し |
 | created_at | timestamptz | NN, 既定 now() | |
@@ -245,7 +247,7 @@ erDiagram
 |---|---|---|---|
 | key | varchar(64) | PK | 設定の名前。今は `notification_settings` だけ |
 | value | jsonb | NN | 設定の値（api-spec の `NotificationSettings` の形） |
-| updated_at | timestamptz | NN, 既定 now() | |
+| updated_at | timestamptz | NN, 既定 now() | 変更のたびにアプリが現在の日時にする（onupdate） |
 
 行がなければ初期値（`backend/app/routes/notices.py` の `DEFAULT_NOTIFICATION_SETTINGS`）を返す。メールを送らないため、通知設定は保存するだけ。
 
@@ -284,7 +286,7 @@ erDiagram
 
 | 項目 | 今の作り | 影響 |
 |---|---|---|
-| メール | 送らない（招待・パスワード再設定・お知らせのメール配信・通知） | 招待とパスワード再設定の画面は「準備中」。CSV 一括登録のアカウントは「招待中」で、パスワードを設定するまでログインできない |
+| メール | 送らない（お知らせのメール配信・通知）。招待メールの仕組みもなくした | パスワードは管理者が設定する（個別作成・CSV 一括登録は共通の初期パスワード・パスワード再設定）。「招待中」の状態はない |
 | 定期処理 | 作らない（未対応の問い合わせの検知・週次レポート） | 予約配信は表示のときに判定する |
 | 部署のマスタ | テーブルにしない（文字列） | 部署名を変えるときは、users・documents・inquiries・notices の部署名も更新するマイグレーションが必要 |
 | 初回ログイン時のパスワード変更 | 作らない | 管理者が決めたパスワードをそのまま使う |
@@ -301,6 +303,7 @@ erDiagram
 | `d79adad5597a` | documents・document_versions・document_chunks（halfvec(3072) と HNSW 索引） |
 | `952c4bfbea6b` | conversations・messages |
 | `c44ed2324f65` | inquiries・inquiry_replies・notices・notice_reads・app_settings |
+| `82e081ed0ed8` | 利用者の「招待中」（invited）をなくす（残っていた招待中の利用者は「利用停止」にする） |
 
 マイグレーションは `docker compose exec api flask db migrate -m "説明"` で自動生成し、生成されたファイルを必ず読んで確認する（halfvec の型や HNSW 索引の演算子クラスは手で直すことがある）。stg では main にマージしたあとの自動デプロイで `flask db upgrade` が実行される。
 

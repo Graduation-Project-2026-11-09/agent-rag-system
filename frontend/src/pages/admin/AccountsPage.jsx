@@ -67,6 +67,51 @@ function EditUserModal({ user, departments, onClose, onSaved }) {
   );
 }
 
+/** 管理者が新しいパスワードを決めて設定する（メールは送らない） */
+function ResetPasswordModal({ user, onClose }) {
+  const toast = useToast();
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const tooShort = password.length < 12;
+  const save = async () => {
+    setSaving(true);
+    try {
+      await userApi.update(user.id, { password });
+      toast(`${user.name} さんのパスワードを再設定しました`);
+      onClose();
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      title="パスワード再設定"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>キャンセル</button>
+          <button className="btn btn-primary" disabled={tooShort || saving} onClick={save}>{saving ? '設定中…' : '再設定する'}</button>
+        </>
+      }
+    >
+      <div className="stack">
+        <p className="muted">{user.name}（{user.email}）の新しいパスワードを設定します。</p>
+        <Field
+          label="新しいパスワード"
+          required
+          error={password && tooShort ? '12文字以上で入力してください' : undefined}
+          hint="12文字以上。本人には安全な方法で伝えてください"
+        >
+          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 export default function AccountsPage() {
   const { user: me } = useAuth();
   const toast = useToast();
@@ -74,6 +119,7 @@ export default function AccountsPage() {
   const [filters, setFilters] = useState({ q: '', department: '', role: '', status: '' });
   const { data: users, loading, reload } = useFetch(() => userApi.list(filters), [JSON.stringify(filters)]);
   const [editing, setEditing] = useState(null);
+  const [resetting, setResetting] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const setF = (k) => (e) => setFilters({ ...filters, [k]: e.target.value });
 
@@ -106,9 +152,6 @@ export default function AccountsPage() {
       danger: true,
       onConfirm: () => run(() => userApi.remove(u.id), 'アカウントを削除しました'),
     });
-
-  // パスワード再設定はメールを送る仕組みができるまで準備中（docs/architecture/ai.md）
-  const askReset = () => toast('パスワード再設定は準備中です', 'error');
 
   return (
     <div className="admin-page">
@@ -166,7 +209,7 @@ export default function AccountsPage() {
                 <td className="muted">{formatDateTime(u.lastLoginAt)}</td>
                 <td className="right nowrap">
                   <button className="icon-btn" title="編集" onClick={() => setEditing(u)}><Pencil size={15} /></button>
-                  <button className="icon-btn" title="パスワード再設定" onClick={() => askReset(u)}><KeyRound size={15} /></button>
+                  <button className="icon-btn" title="パスワード再設定" onClick={() => setResetting(u)}><KeyRound size={15} /></button>
                   <button className="icon-btn" title={u.status === 'suspended' ? '利用再開' : '利用停止'} onClick={() => askSuspend(u)} disabled={u.id === me.id}>
                     {u.status === 'suspended' ? <RotateCcw size={15} /> : <Ban size={15} />}
                   </button>
@@ -182,6 +225,7 @@ export default function AccountsPage() {
       {users && <p className="muted small">{users.length} 件</p>}
 
       {editing && <EditUserModal user={editing} departments={departments} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
+      {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />}
       <ConfirmDialog open={!!confirm} {...confirm} onCancel={() => setConfirm(null)} />
     </div>
   );

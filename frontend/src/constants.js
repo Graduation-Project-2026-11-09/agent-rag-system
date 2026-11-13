@@ -8,7 +8,6 @@ export const ROLES = {
 
 export const USER_STATUS = {
   active: { label: '有効', tone: 'green' },
-  invited: { label: '招待中', tone: 'blue' },
   suspended: { label: '利用停止', tone: 'gray' },
 };
 

@@ -13,7 +13,8 @@ _hasher = PasswordHasher()
 _DUMMY_HASH = _hasher.hash("dummy-password-for-timing")
 
 ROLES = ("user", "staff", "admin")
-STATUSES = ("active", "invited", "suspended")
+# メールを送らないため「招待中」はない。アカウントは作った時点でパスワードを持つ
+STATUSES = ("active", "suspended")
 
 
 class User(db.Model):
@@ -23,7 +24,7 @@ class User(db.Model):
         email: ログイン ID。小文字で保存する。
         role: 権限。user（一般利用者）/ staff（部署担当者）/ admin（管理者）。
         handles_department: 部署担当者が対応する問い合わせの部署。一般利用者は None。
-        status: active（利用中）/ invited（招待中）/ suspended（利用停止）。
+        status: active（利用中）/ suspended（利用停止）。
     """
 
     __tablename__ = "users"
@@ -51,7 +52,7 @@ class User(db.Model):
             password: 利用者が入力したパスワード。
 
         Returns:
-            正しければ True。パスワード未設定（招待中など）の場合は False。
+            正しければ True。パスワードが未設定の場合は False。
         """
         if not self.password_hash:
             verify_dummy_password(password)

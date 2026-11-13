@@ -172,7 +172,6 @@ NEW_USER = {
     "department": "開発部",
     "role": "user",
     "handlesDepartment": None,
-    "passwordMode": "password",
     "password": "long-enough-pass",
 }
 
@@ -192,11 +191,8 @@ def test_create_and_update_user(client, people):
     assert client.delete(url).status_code == 204
 
 
-def test_create_user_rejects_invite_and_short_password(client, people):
+def test_create_user_rejects_short_password(client, people):
     login_as(client, people["admin"])
-    invite = client.post("/api/admin/users", json={**NEW_USER, "passwordMode": "invite"})
-    assert invite.status_code == 400
-    assert "準備中" in invite.get_json()["message"]
     short = client.post("/api/admin/users", json={**NEW_USER, "password": "short"})
     assert short.status_code == 400
 
@@ -209,12 +205,36 @@ def test_bulk_create_reports_errors_per_row(client, people):
         {**NEW_USER, "email": "c@example.co.jp", "employeeId": "B3", "department": "存在しない部"},
     ]
 
-    result = client.post("/api/admin/users/bulk", json={"users": rows}).get_json()
+    result = client.post(
+        "/api/admin/users/bulk", json={"users": rows, "password": "bulk-initial-pass"}
+    ).get_json()
 
     assert result["created"] == 1
     assert [e["row"] for e in result["errors"]] == [2, 3]
     user = db.session.scalar(select(User).where(User.email == "a@example.co.jp"))
-    assert user.status == "invited"
+    # メールは送らないので、共通の初期パスワードですぐにログインできる
+    assert user.status == "active"
+    assert user.check_password("bulk-initial-pass")
+
+
+def test_bulk_create_requires_long_password(client, people):
+    login_as(client, people["admin"])
+    rows = [{**NEW_USER, "email": "d@example.co.jp", "employeeId": "B4"}]
+
+    response = client.post("/api/admin/users/bulk", json={"users": rows, "password": "short"})
+
+    assert response.status_code == 400
+    assert db.session.scalar(select(User).where(User.email == "d@example.co.jp")) is None
+
+
+def test_admin_can_reset_password(client, people):
+    login_as(client, people["admin"])
+    url = f"/api/admin/users/{people['user'].id}"
+
+    assert client.patch(url, json={"password": "short"}).status_code == 400
+    assert client.patch(url, json={"password": "new-long-password"}).status_code == 200
+    db.session.refresh(people["user"])
+    assert people["user"].check_password("new-long-password")
 
 
 def test_admin_cannot_lock_themselves_out(client, people):

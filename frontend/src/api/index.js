@@ -87,10 +87,10 @@ export const noticeApi = {
 export const userApi = {
   list: pick(mock.listUsers, (params) => http.get('/admin/users', { params })),
   create: pick(mock.createUser, (payload) => http.post('/admin/users', payload)),
-  bulkCreate: pick(mock.bulkCreateUsers, (rows) => http.post('/admin/users/bulk', { users: rows })),
+  bulkCreate: pick(mock.bulkCreateUsers, (rows, password) => http.post('/admin/users/bulk', { users: rows, password })),
+  // payload に password を入れるとパスワードの再設定になる
   update: pick(mock.updateUser, (id, payload) => http.patch(`/admin/users/${id}`, payload)),
   remove: pick(mock.deleteUser, (id) => http.delete(`/admin/users/${id}`)),
-  sendPasswordReset: pick(mock.sendPasswordReset, (id) => http.post(`/admin/users/${id}/password-reset`)),
 };
 
 // ---------- ドキュメント（管理者） ----------
