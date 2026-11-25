@@ -56,7 +56,10 @@
 
 ### 質問送信（Server-Sent Events）
 
-`Content-Type: text/event-stream` で、Agent の処理ステップを順番に送信し、最後に回答を送ります。
+`Content-Type: text/event-stream` で、Agent の処理ステップを順番に送信し、回答の本文を生成しながら少しずつ送り、最後に回答を送ります。
+
+- `step` の `elapsedMs` は、質問を受けてからその段階が終わるまでの時間（ミリ秒）。どの段階に時間がかかったかの確認に使う
+- `delta` は生成途中の回答の本文。`text` を届いた順につなげると本文になる。引用番号は `answer` で振り直されるので、`answer` が届いたら本文を置き換える
 
 ```
 event: step
@@ -73,6 +76,15 @@ data: {"id":"s4","type":"evaluate","title":"情報の充足度を評価：不足
 
 event: step
 data: {"id":"s5","type":"search","title":"追加検索（2回目）","queries":["特別休暇 結婚"],"results":[…]}
+
+event: delta
+data: {"text":"結婚した場合の"}
+
+event: delta
+data: {"text":"手続きは…"}
+
+event: step
+data: {"id":"s6","type":"generate","title":"回答を作成","detail":"…","elapsedMs":14200}
 
 event: answer
 data: { …Message… }
@@ -103,7 +115,7 @@ def send_message(cid):
 {
   "id": "m10", "role": "assistant", "content": "Markdown の回答。根拠は [1] のように番号で引用",
   "createdAt": "...",
-  "agent": { "steps": [/* step と同じ形 */], "searchCount": 2, "durationMs": 5000 },
+  "agent": { "steps": [/* step と同じ形 */], "searchCount": 2, "durationMs": 5000 },  // durationMs: 本文の最後の文字が出るまでの時間
   "sources": [
     { "index": 1, "documentId": "d3", "title": "人事手続きマニュアル", "fileType": "docx",
       "department": "人事部", "updatedAt": "...", "section": "3.2 氏名変更", "page": 8,

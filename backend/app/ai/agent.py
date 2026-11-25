@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from ..extensions import db
 from ..masters import DEPARTMENTS
 from . import prompts
-from .llm import Stage, Usage, call_structured, to_prompt_json
+from .llm import Stage, Usage, call_structured, stream_structured, to_prompt_json
 from .retrieval import SearchHit, Viewer, count_visible_documents, search_chunks
 
 # OpenAI API の料金と回答時間を抑えるため、再検索は最大 1 回まで（計画書では 3 回。ai.md 参照）
@@ -66,6 +66,7 @@ class Evaluation(BaseModel):
 
 
 class Answer(BaseModel):
+    # 本文を 1 文字ずつ画面に出すため、content を最初のプロパティにしておく（stream_structured）
     content: str
     cited: list[int]
     status: Literal["answered", "partial", "not_found"]
@@ -118,14 +119,30 @@ class AgentResult:
     usage: Usage = field(default_factory=Usage)
 
 
+@dataclass
+class AnswerDelta:
+    """回答の本文のうち、新しく生成された部分（SSE の delta イベント）。
+
+    step と同じジェネレーターで返し、画面に 1 文字ずつ表示する。
+    """
+
+    text: str
+
+
 class _StepRecorder:
-    """画面に表示する処理の過程（SSE の step イベント）を作る。"""
+    """画面に表示する処理の過程（SSE の step イベント）を作る。
+
+    各段階に、質問を受けてからの経過時間（elapsedMs）を付ける。
+    回答が遅いときに、どの段階に時間がかかったかを利用履歴から確かめられるようにするため。
+    """
 
     def __init__(self) -> None:
         self.steps: list[dict] = []
+        self._started = time.monotonic()
 
     def add(self, step_type: str, title: str, **fields) -> dict:
         step = {"id": f"s{len(self.steps) + 1}", "type": step_type, "title": title}
+        step["elapsedMs"] = int((time.monotonic() - self._started) * 1000)
         step.update({k: v for k, v in fields.items() if v is not None})
         self.steps.append(step)
         return step
@@ -282,7 +299,7 @@ def inquiry_suggestion(draft: InquiryDraft, department: str) -> dict:
 
 def run_agentic(
     question: str, viewer: Viewer, history: list[HistoryItem]
-) -> Generator[dict, None, AgentResult]:
+) -> Generator["dict | AnswerDelta", None, AgentResult]:
     """検索Agent で回答する。処理の過程を 1 段階ずつ yield し、最後に結果を返す。
 
     Args:
@@ -291,7 +308,7 @@ def run_agentic(
         history: これまでの会話。
 
     Yields:
-        画面に表示する処理の過程（docs/api-spec.md の step）。
+        画面に表示する処理の過程（docs/api-spec.md の step）と、生成中の回答の本文（AnswerDelta）。
 
     Returns:
         回答の結果。
@@ -365,7 +382,7 @@ def run_agentic(
 
 def run_basic(
     question: str, viewer: Viewer, history: list[HistoryItem]
-) -> Generator[dict, None, AgentResult]:
+) -> Generator["dict | AnswerDelta", None, AgentResult]:
     """通常の RAG（質問文で 1 回検索して回答する）。検索Agent との比較に使う。
 
     引数・戻り値・例外は run_agentic() と同じ。
@@ -389,34 +406,45 @@ def _answer(
     analysis: Analysis | None,
     recorder: _StepRecorder,
     usage: Usage,
-) -> Generator[dict, None, tuple]:
+) -> Generator["dict | AnswerDelta", None, tuple]:
     if not hits:
         # 根拠になる資料がないときは、AI に回答を作らせない（推測で答えさせないため）
-        department = choose_department(analysis, [])
-        suggestion = _draft_inquiry(question, viewer, department, [], [question], usage)
         yield recorder.add(
             "generate", "回答を作成", detail="根拠となる資料がないため、推測での回答は行いません"
         )
+        department = choose_department(analysis, [])
+        suggestion = _draft_inquiry(question, viewer, department, [], [question], usage)
         return NOT_FOUND_CONTENT, [], suggestion, "not_found"
 
-    answer = call_structured(ANSWER, build_answer_input(question, hits, history), usage)
+    stream = stream_structured(
+        ANSWER, build_answer_input(question, hits, history), usage, field="content"
+    )
+    while True:
+        try:
+            text = next(stream)
+        except StopIteration as finished:
+            answer = finished.value
+            break
+        yield AnswerDelta(text)
     content, sources = build_sources(answer, hits)
     status = answer.status if sources else "not_found"
     if not sources:
         content = NOT_FOUND_CONTENT
-
-    suggestion = None
-    if status != "answered":
-        department = choose_department(analysis, sources)
-        unresolved = answer.unresolved or [question]
-        suggestion = _draft_inquiry(question, viewer, department, sources, unresolved, usage)
 
     detail = (
         f"根拠資料 {len(sources)} 件をもとに回答を作成しました"
         if sources
         else "根拠となる資料がないため、推測での回答は行いません"
     )
+    # 本文の最後の文字が出た時点で記録する（この経過時間を回答時間にする）
     yield recorder.add("generate", "回答を作成", detail=detail)
+
+    # 問い合わせの下書きは本文を出し終えてから作る。利用者は待たずに本文を読める
+    suggestion = None
+    if status != "answered":
+        department = choose_department(analysis, sources)
+        unresolved = answer.unresolved or [question]
+        suggestion = _draft_inquiry(question, viewer, department, sources, unresolved, usage)
     return content, sources, suggestion, status
 
 
@@ -436,6 +464,17 @@ def _draft_inquiry(
     return inquiry_suggestion(draft, department)
 
 
+def _answer_finished_ms(recorder: _StepRecorder, started: float) -> int:
+    """回答時間。質問を受けてから、回答の本文の最後の文字が出るまで。
+
+    問い合わせの下書きを作る時間は含めない。利用者は本文を読み始めていて、待っていないため。
+    """
+    generated = [s for s in recorder.steps if s["type"] == "generate"]
+    if generated:
+        return generated[-1]["elapsedMs"]
+    return int((time.monotonic() - started) * 1000)
+
+
 def _result(
     content: str,
     recorder: _StepRecorder,
@@ -451,7 +490,7 @@ def _result(
         content=content,
         steps=recorder.steps,
         search_count=search_count,
-        duration_ms=int((time.monotonic() - started) * 1000),
+        duration_ms=_answer_finished_ms(recorder, started),
         sources=sources,
         inquiry_suggestion=suggestion,
         answer_status=answer_status,
@@ -462,7 +501,7 @@ def _result(
 
 def run(
     question: str, viewer: Viewer, history: list[HistoryItem], mode: str
-) -> Generator[dict, None, AgentResult]:
+) -> Generator["dict | AnswerDelta", None, AgentResult]:
     """設定の方式（agentic / basic）で回答する。"""
     runner = run_basic if mode == "basic" else run_agentic
     return (yield from runner(question, viewer, history))

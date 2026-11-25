@@ -114,19 +114,15 @@ def test_batch_run_goes_through_all_stages(setup):
 
 
 def test_sync_run_measures_duration(setup, monkeypatch):
-    monkeypatch.setattr(
-        agent,
-        "call_structured",
-        ScriptedLLM(
-            {
-                "analyze": [ANALYSIS],
-                "expand": [OUTPUTS["Expansion"]],
-                "evaluate": [OUTPUTS["Evaluation"]],
-                "answer": [ANSWER],
-                "inquiry": [DRAFT],
-            }
-        ),
-    )
+    ScriptedLLM(
+        {
+            "analyze": [ANALYSIS],
+            "expand": [OUTPUTS["Expansion"]],
+            "evaluate": [OUTPUTS["Evaluation"]],
+            "answer": [ANSWER],
+            "inquiry": [DRAFT],
+        }
+    ).install(monkeypatch, agent)
     run = evaluation.create_run(["agentic"], ["q01"])
 
     evaluation.run_sync(run)

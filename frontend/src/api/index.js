@@ -48,7 +48,8 @@ export const chatApi = {
   deleteConversation: pick(mock.deleteConversation, (id) => http.delete(`/conversations/${id}`)),
   /**
    * 質問を送信し、Agent の処理過程をストリーミングで受け取る。
-   * onEvent には { type: 'step' | 'answer' | 'error', data } が順に渡される。
+   * onEvent には { type: 'step' | 'delta' | 'answer' | 'error', data } が順に渡される。
+   * delta は生成途中の回答の本文（{ text }）。届いた順につなげると本文になる。
    */
   sendMessage: pick(mock.sendMessage, (conversationId, content, onEvent, signal) =>
     streamSSE(`/conversations/${conversationId}/messages`, { content }, onEvent, signal),

@@ -39,5 +39,21 @@ class ScriptedLLM:
         values = self.outputs[stage.name]
         return values.pop(0) if len(values) > 1 else values[0]
 
+    def stream(self, stage, user_input, usage, field):
+        """stream_structured の代わり。field の値を 2 つに分けて返す。"""
+        output = self(stage, user_input, usage)
+        value = getattr(output, field)
+        half = len(value) // 2
+        for part in (value[:half], value[half:]):
+            if part:
+                yield part
+        return output
+
+    def install(self, monkeypatch, module) -> "ScriptedLLM":
+        """module（app.ai.agent）の AI の呼び出しを、この偽物に差し替える。"""
+        monkeypatch.setattr(module, "call_structured", self)
+        monkeypatch.setattr(module, "stream_structured", self.stream)
+        return self
+
     def called(self, name: str) -> int:
         return sum(1 for stage, _ in self.calls if stage == name)

@@ -273,6 +273,11 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--primary); widt
 .doc-page-head { font-size: 12px; color: var(--text-muted); font-family: var(--font); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px; }
 .doc-ellipsis { color: var(--border-strong); }
 
+/* 生成途中の回答（末尾にカーソルを点滅させる） */
+.streaming { margin-top: 12px; }
+.streaming .markdown > :last-child::after { content: ''; display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: text-bottom; background: var(--primary); animation: caret-blink 1s steps(1) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+
 /* 問い合わせ提案 */
 .inquiry-suggest { margin-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid #c8d8fb; background: var(--primary-soft); border-radius: var(--radius); }
 .inquiry-suggest-text { display: flex; gap: 10px; flex: 1; min-width: 260px; }

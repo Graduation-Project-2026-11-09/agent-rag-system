@@ -147,7 +147,12 @@ export async function sendMessage(conversationId, content, onEvent, signal) {
     if (signal?.aborted) return;
     onEvent({ type: 'step', data: clone(step) });
   }
-  await delay(500);
+  // 実 API と同じく、回答の本文を少しずつ送る
+  for (let i = 0; i < message.content.length; i += 4) {
+    await delay(30);
+    if (signal?.aborted) return;
+    onEvent({ type: 'delta', data: { text: message.content.slice(i, i + 4) } });
+  }
   message.createdAt = now();
   conv.messages.push(message);
   conv.updatedAt = now();

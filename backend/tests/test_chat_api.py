@@ -46,8 +46,7 @@ def scripted_agent(app, monkeypatch):
             ],
         }
     )
-    monkeypatch.setattr(agent, "call_structured", scripted)
-    return scripted
+    return scripted.install(monkeypatch, agent)
 
 
 def _events(response) -> list[tuple[str, dict]]:
@@ -99,7 +98,11 @@ def test_send_message_streams_steps_and_answer(client_as_user, scripted_agent):
 
     assert response.mimetype == "text/event-stream"
     events = _events(response)
-    assert [name for name, _ in events] == ["step"] * 5 + ["answer"]
+    # 回答の本文は、出来上がる前から delta で少しずつ送る
+    assert [name for name, _ in events] == ["step"] * 4 + ["delta"] * 2 + ["step", "answer"]
+    streamed = "".join(data["text"] for name, data in events if name == "delta")
+    assert streamed == "締め日は **毎月末日** です [1]。"
+    assert all("elapsedMs" in data for name, data in events if name == "step")
     answer = events[-1][1]
     assert answer["role"] == "assistant"
     assert answer["sources"][0]["title"] == "経費精算マニュアル"

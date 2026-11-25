@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 import ChatInput from '../../components/chat/ChatInput';
 import AgentTrace from '../../components/chat/AgentTrace';
 import AssistantMessage from '../../components/chat/AssistantMessage';
+import MessageContent from '../../components/chat/MessageContent';
 import SourcePreviewModal from '../../components/chat/SourcePreviewModal';
 import InquiryModal from '../../components/chat/InquiryModal';
 import Spinner from '../../components/common/Spinner';
@@ -21,7 +22,7 @@ export default function ChatPage() {
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [pending, setPending] = useState(null); // 回答生成中の Agent ステップ
+  const [pending, setPending] = useState(null); // 回答生成中の Agent ステップと、生成途中の本文
   const [source, setSource] = useState(null);
   const [inquiryTarget, setInquiryTarget] = useState(null);
   const abortRef = useRef(null);
@@ -51,6 +52,12 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, pending?.steps.length]);
 
+  // 本文が伸びるたびに下へ追従する（smooth だと連続で呼ばれたときにかくつくため auto）
+  const streamedLength = pending?.content.length ?? 0;
+  useEffect(() => {
+    if (streamedLength) bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+  }, [streamedLength]);
+
   const send = async (text) => {
     let id = conversationId;
     if (!id) {
@@ -61,7 +68,7 @@ export default function ChatPage() {
       reloadConversations();
     }
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, role: 'user', content: text, createdAt: new Date().toISOString() }]);
-    setPending({ steps: [] });
+    setPending({ steps: [], content: '' });
     const controller = new AbortController();
     abortRef.current = controller;
     try {
@@ -69,7 +76,8 @@ export default function ChatPage() {
         id,
         text,
         (ev) => {
-          if (ev.type === 'step') setPending((p) => p && { steps: [...p.steps, ev.data] });
+          if (ev.type === 'step') setPending((p) => p && { ...p, steps: [...p.steps, ev.data] });
+          if (ev.type === 'delta') setPending((p) => p && { ...p, content: p.content + ev.data.text });
           if (ev.type === 'answer') {
             setMessages((m) => [...m, ev.data]);
             setPending(null);
@@ -145,6 +153,12 @@ export default function ChatPage() {
                 <span className="msg-avatar"><Sparkles size={14} /></span>
                 <div className="msg-body">
                   <AgentTrace steps={pending.steps} running />
+                  {pending.content && (
+                    <div className="streaming">
+                      {/* 引用番号は回答が出来上がったときに振り直されるため、生成中は押せない */}
+                      <MessageContent content={pending.content} />
+                    </div>
+                  )}
                 </div>
               </div>
             )}

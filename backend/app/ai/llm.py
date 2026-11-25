@@ -5,6 +5,10 @@
 """
 
 import json
+import logging
+import re
+import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +17,8 @@ from openai import OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from .client import get_openai_client
+
+log = logging.getLogger(__name__)
 
 # 料金（USD / 100 万トークン、Standard）。2026-11-10 に公式の料金ページで確認した値。
 # 利用履歴に費用の目安を出すために使う。載っていないモデルは費用を計算しない
@@ -166,14 +172,137 @@ def call_structured(stage: Stage, user_input: str, usage: Usage) -> BaseModel:
         AIConfigError: API キーが設定されていない場合。
     """
     request = build_request(stage, user_input)
+    started = time.monotonic()
     try:
         response = get_openai_client().responses.create(**request)
     except OpenAIError as e:
         raise LLMError(f"{stage.name}: AI の呼び出しに失敗しました（{type(e).__name__}）") from e
 
-    if response.usage is not None:
-        usage.add(request["model"], response.usage.input_tokens, response.usage.output_tokens)
+    _record_usage(stage, request["model"], response.usage, usage, started)
     return parse_output(stage, response.output_text)
+
+
+def stream_structured(
+    stage: Stage, user_input: str, usage: Usage, field: str
+) -> Generator[str, None, BaseModel]:
+    """段階を 1 回実行し、出力の field（文字列）を生成されたそばから少しずつ返す。
+
+    回答の本文を 1 文字ずつ画面に出すために使う。構造化出力はスキーマのプロパティの順に
+    生成されるので、field を出力の形の最初のプロパティにしておく。
+
+    Args:
+        stage: 段階の設定。
+        user_input: 入力。
+        usage: 使ったトークン数を加える先。
+        field: 少しずつ返すプロパティの名前。
+
+    Yields:
+        field の値のうち、新しく生成された部分。
+
+    Returns:
+        stage.output の形の出力（すべて生成し終わったもの）。
+
+    Raises:
+        LLMError: API の呼び出しか、出力の読み取りに失敗した場合。
+        AIConfigError: API キーが設定されていない場合。
+    """
+    request = build_request(stage, user_input)
+    started = time.monotonic()
+    reader = JsonStringFieldReader(field)
+    chunks: list[str] = []
+    response = None
+    try:
+        for event in get_openai_client().responses.create(**request, stream=True):
+            if event.type == "response.output_text.delta":
+                chunks.append(event.delta)
+                text = reader.feed(event.delta)
+                if text:
+                    yield text
+            elif event.type == "response.completed":
+                response = event.response
+            elif event.type in ("response.failed", "response.incomplete", "error"):
+                raise LLMError(f"{stage.name}: AI の応答が途中で終わりました（{event.type}）")
+    except OpenAIError as e:
+        raise LLMError(f"{stage.name}: AI の呼び出しに失敗しました（{type(e).__name__}）") from e
+
+    _record_usage(stage, request["model"], response and response.usage, usage, started)
+    return parse_output(stage, "".join(chunks))
+
+
+def _record_usage(stage: Stage, model: str, response_usage, usage: Usage, started: float) -> None:
+    # 回答が遅いときに、どの段階に時間がかかっているかをログで確かめられるようにする
+    seconds = time.monotonic() - started
+    if response_usage is None:
+        log.info("AI %s: %.1f 秒（%s）", stage.name, seconds, model)
+        return
+    usage.add(model, response_usage.input_tokens, response_usage.output_tokens)
+    log.info(
+        "AI %s: %.1f 秒（%s・入力 %d・出力 %d トークン）",
+        stage.name,
+        seconds,
+        model,
+        response_usage.input_tokens,
+        response_usage.output_tokens,
+    )
+
+
+class JsonStringFieldReader:
+    """生成途中の JSON（{"content": "…）から、1 つの文字列プロパティの値を少しずつ取り出す。
+
+    JSON は最後まで届かないと json.loads で読めないため、値の部分だけを切り出して読む。
+    エスケープ（\\n や \\uXXXX）の途中で区切られた場合は、続きが届くまで返さない。
+    """
+
+    def __init__(self, field: str) -> None:
+        self._start = re.compile(r'\s*\{\s*"' + re.escape(field) + r'"\s*:\s*"')
+        self._buffer = ""
+        self._value_start: int | None = None
+        self._returned = 0
+        self._finished = False
+
+    def feed(self, chunk: str) -> str:
+        """届いた出力を加え、値のうちまだ返していない部分を返す。"""
+        self._buffer += chunk
+        if self._finished:
+            return ""
+        if self._value_start is None:
+            match = self._start.match(self._buffer)
+            if match is None:
+                return ""
+            self._value_start = match.end()
+
+        raw, self._finished = self._raw_value(self._buffer[self._value_start :])
+        try:
+            value = json.loads(f'"{raw}"')
+        except json.JSONDecodeError:
+            return ""
+        new = value[self._returned :]
+        self._returned = len(value)
+        return new
+
+    @staticmethod
+    def _raw_value(text: str) -> tuple[str, bool]:
+        """値の閉じる " までの部分と、閉じたかどうか。途中のエスケープは含めない。"""
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char == '"':
+                return text[:index], True
+            if char == "\\":
+                # \uXXXX は 6 文字、それ以外は 2 文字。足りなければ、その手前までにする
+                length = 6 if text[index + 1 : index + 2] == "u" else 2
+                if index + length > len(text):
+                    return text[:index], False
+                # サロゲートペア（絵文字など）の前半だけでは文字にならないので、後半を待つ
+                if length == 6 and 0xD800 <= int(text[index + 2 : index + 6], 16) <= 0xDBFF:
+                    if index + 12 > len(text):
+                        return text[:index], False
+                    index += 12
+                    continue
+                index += length
+                continue
+            index += 1
+        return text, False
 
 
 def to_prompt_json(value: Any) -> str:
