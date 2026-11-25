@@ -48,7 +48,8 @@
 | 通常の RAG | 質問文で 1 回検索して ⑤ だけ行う（`run_basic`）。`AI_RAG_MODE=basic` でチャットも切り替えられる |
 | 根拠がないとき | 検索で何も見つからなければ ⑤ を呼ばずに決まった文を返し、問い合わせを提案する。⑤ が存在しない番号を引用したら消す（ルール 6） |
 | 公開範囲 | 検索の SQL の中で `visibility_type = 'all'` または `visible_departments` に所属部署を含む資料に絞る。管理者はすべて（ルール 7）。HNSW 索引で絞り込みと併用するため `hnsw.iterative_scan = relaxed_order` を使う |
-| ストリーミング | SSE。①〜⑤ の過程を 1 段階ずつ `step` イベントで送り、最後に `answer` を送る（docs/api-spec.md） |
+| ストリーミング | SSE。①〜⑤ の過程を 1 段階ずつ `step` イベントで送る。⑤ の回答の本文は OpenAI のストリーミングで受け取り、生成されたそばから `delta` イベントで送る（画面に 1 文字ずつ出る）。最後に `answer` を送る（docs/api-spec.md） |
+| 時間の記録 | 各 `step` に、質問を受けてからの経過時間（`elapsedMs`）を付けて `messages.steps` に保存する。AI の呼び出しごとの秒数とトークン数はログ（`app.ai.llm`）に出す。遅いときにどの段階が原因かを確かめるため |
 | プロンプト | `prompts.py` にまとめ、Git で変更履歴を残す。変えたら評価で確かめる |
 | 費用の記録 | 回答ごとに入力・出力のトークン数と費用の目安を `messages` に保存し、利用履歴で見られるようにする |
 | DB の接続 | AI の応答を待つ間はトランザクションを開かない（`idle_in_transaction_session_timeout` が 60 秒のため）。利用者の情報は `Viewer` に写してから使う |

@@ -145,13 +145,16 @@ def send_message(conversation_id: int):
 
 
 def _relay_steps(steps) -> Iterator[str]:
-    """エージェントの step を SSE のイベントにして流し、最後にエージェントの結果を返す。"""
+    """step と回答の本文を SSE のイベントにして流し、最後にエージェントの結果を返す。"""
     while True:
         try:
-            step = next(steps)
+            item = next(steps)
         except StopIteration as finished:
             return finished.value
-        yield _event("step", step)
+        if isinstance(item, agent.AnswerDelta):
+            yield _event("delta", {"text": item.text})
+        else:
+            yield _event("step", item)
 
 
 def _event(name: str, data: dict) -> str:

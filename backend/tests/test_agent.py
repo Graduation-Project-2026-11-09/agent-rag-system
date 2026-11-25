@@ -124,20 +124,21 @@ DRAFT = InquiryDraft(subject="件名", body="本文", reason="資料に記載が
 
 
 def _run(generator):
+    """エージェントを最後まで動かし、step と結果を返す（回答の本文の断片は steps に含めない）。"""
     steps = []
     while True:
         try:
-            steps.append(next(generator))
+            item = next(generator)
         except StopIteration as finished:
             return steps, finished.value
+        if not isinstance(item, agent.AnswerDelta):
+            steps.append(item)
 
 
 @pytest.fixture
 def llm(monkeypatch):
     def install(**outputs):
-        scripted = ScriptedLLM(outputs)
-        monkeypatch.setattr(agent, "call_structured", scripted)
-        return scripted
+        return ScriptedLLM(outputs).install(monkeypatch, agent)
 
     return install
 
@@ -159,6 +160,8 @@ def test_agentic_answers_when_information_is_sufficient(documents, llm):
     assert [s["index"] for s in result.sources] == [1, 2]
     assert result.usage.input_tokens > 0
     assert scripted.called("inquiry") == 0
+    # 回答時間は、本文の最後の文字が出た時点（「回答を作成」の段階）までの時間
+    assert result.duration_ms == steps[-1]["elapsedMs"]
 
 
 def test_agentic_searches_again_only_once(documents, llm):
@@ -223,6 +226,33 @@ def test_partial_answer_suggests_inquiry(documents, llm):
         "body": DRAFT.body,
     }
     assert "海外の日当" in [i for n, i in scripted.calls if n == "inquiry"][0]
+
+
+def test_answer_time_does_not_include_inquiry_draft(documents, llm, monkeypatch):
+    partial = ANSWER.model_copy(update={"status": "partial", "unresolved": ["海外の日当"]})
+    llm(
+        analyze=[ANALYSIS],
+        expand=[Expansion(queries=["経費 締め日"], strategy="検索")],
+        evaluate=[Evaluation(sufficient=True, covered=[], missing=[], reason="")],
+        answer=[partial.model_copy(update={"content": "締め日は月末です [1]。", "cited": [1]})],
+        inquiry=[DRAFT],
+    )
+    # 問い合わせの下書きに 10 秒かかったことにする
+    original = agent._draft_inquiry
+
+    def slow_draft(*args):
+        clock["now"] += 10
+        return original(*args)
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(agent.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(agent, "_draft_inquiry", slow_draft)
+
+    steps, result = _run(agent.run_agentic("海外出張の日当は？", _viewer(), []))
+
+    assert result.inquiry_suggestion is not None
+    assert steps[-1]["type"] == "generate"
+    assert result.duration_ms == 0  # 下書きの 10 秒は含めない
 
 
 def test_non_work_question_is_not_searched(documents, llm):
