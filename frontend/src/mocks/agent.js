@@ -48,12 +48,6 @@ const SCENARIOS = [
       ['d1', '第32条（特別休暇）', 15, '本人が結婚するときは、婚姻日から6か月以内に連続5日間の特別休暇を与える。特別休暇は有給とする。'],
       ['d2', '第5条（結婚祝金）', 2, '従業員が結婚したときは、結婚祝金として30,000円を支給する。申請は婚姻日から3か月以内に慶弔金申請書により行う。'],
     ],
-    nextSteps: [
-      { title: '氏名変更届の提出', description: '人事システム > 各種届出 > 氏名変更', department: '人事部', deadline: '速やかに' },
-      { title: '被扶養者（異動）届の提出', description: '課税証明書・婚姻の事実が確認できる書類を添付', department: '人事部', deadline: '婚姻日から5日以内' },
-      { title: '慶弔金申請書の提出', description: '総務ポータル > 申請書ダウンロード', department: '総務部', deadline: '婚姻日から3か月以内' },
-      { title: '結婚休暇の取得申請', description: '勤怠システムで「特別休暇（結婚）」を選択', department: '人事部', deadline: '婚姻日から6か月以内' },
-    ],
     inquiry: null,
   },
   {
@@ -79,10 +73,6 @@ const SCENARIOS = [
       ['d3', '3.4 住所変更', 11, '住所を変更した場合は、転居後14日以内に人事システムの住所変更届により届け出ること。'],
       ['d5', '第6条（経路変更）', 3, '通勤経路に変更が生じた場合は、変更日から1か月以内に申請すること。申請が遅れた場合の遡及支給は1か月分を限度とする。'],
       ['d4', '5.2 住所変更の連携', 15, '人事システムで受理した住所変更は、健康保険・厚生年金の届出に自動で反映される。'],
-    ],
-    nextSteps: [
-      { title: '住所変更届の提出', description: '人事システム > 各種届出 > 住所変更', department: '人事部', deadline: '転居後14日以内' },
-      { title: '通勤手当の再申請', description: '経費システム > 通勤手当申請', department: '経理部', deadline: '経路変更日から1か月以内' },
     ],
     inquiry: null,
   },
@@ -112,7 +102,6 @@ const SCENARIOS = [
       ['d7', '第12条（パスワード管理）', 9, 'パスワードは12文字以上とし、英大文字・英小文字・数字をそれぞれ1文字以上含めること。'],
       ['d8', '2.4 アカウントロック', 7, '5回連続で認証に失敗した場合、アカウントは30分間ロックされる。解除されない場合はヘルプデスク（内線1234）へ連絡する。'],
     ],
-    nextSteps: [],
     inquiry: null,
   },
   {
@@ -144,9 +133,6 @@ const SCENARIOS = [
       ['d6', '2.1 締め日と支払日', 5, '経費精算の締め日は毎月末日とし、翌月15日に給与振込口座へ支払う。'],
       ['d6', '3.2 領収書の取扱い', 9, '領収書は画像を経費システムに添付し、紙の原本は月末までに経理部へ提出する。電子領収書の場合は原本の提出を要しない。'],
       ['d6', '2.2 締め日の例外', 6, '業務の都合により部署単位で締め日を変更する場合は、経理部が別途通知する。'],
-    ],
-    nextSteps: [
-      { title: '経費システムで精算申請', description: '経費システム > 新規申請 > 領収書画像を添付', department: '経理部', deadline: '毎月末日' },
     ],
     inquiry: null,
   },
@@ -182,11 +168,6 @@ const SCENARIOS = [
       ['d4', '4.1 出産・育児に関する給付', 12, '産前産後休業・育児休業期間中は、申出により健康保険料・厚生年金保険料が免除される。'],
       ['d2', '第6条（出産祝金）', 2, '従業員又はその配偶者が出産したときは、1子につき20,000円を支給する。'],
     ],
-    nextSteps: [
-      { title: '産前産後休業の申請', description: '勤怠システム > 休業申請', department: '人事部', deadline: '休業開始の1か月前まで' },
-      { title: '育児休業申出書の提出', description: '人事システム > 各種届出 > 育児休業', department: '人事部', deadline: '開始予定日の1か月前まで' },
-      { title: '慶弔金申請書（出産）の提出', description: '総務ポータル > 申請書ダウンロード', department: '総務部', deadline: '出産日から3か月以内' },
-    ],
     inquiry: null,
   },
   {
@@ -218,7 +199,6 @@ const SCENARIOS = [
       ['d1', '第45条（兼業の許可）', 21, '従業員が他の会社の業務に従事し、又は自ら事業を営もうとするときは、あらかじめ会社の許可を得なければならない。'],
       ['d1', '第46条（競業の禁止）', 21, '従業員は、会社と競業する事業を営み、又は競業する他社の業務に従事してはならない。'],
     ],
-    nextSteps: [],
     inquiry: {
       department: '人事部',
       reason: '許可の判断基準・申請書の様式が社内資料に見つかりませんでした',
@@ -240,7 +220,6 @@ const FALLBACK = {
 
 誤った案内を避けるため、AIによる推測での回答は控えます。担当部署へ問い合わせることをおすすめします。`,
   sources: [],
-  nextSteps: [],
   inquiry: { department: '総務部', reason: '回答の根拠となる社内資料が見つかりませんでした', subject: null, unclear: ['ご質問の内容全般'] },
 };
 
@@ -333,7 +312,6 @@ export function runAgent(question, user) {
     createdAt: new Date().toISOString(),
     agent: { steps, searchCount, durationMs: 2400 + searchCount * 1300 },
     sources,
-    nextSteps: scenario.nextSteps.map((s) => ({ ...s, id: nextId('t') })),
     inquirySuggestion: scenario.inquiry ? buildInquiryDraft(scenario.inquiry, question, user, sources) : null,
     feedback: null,
   };

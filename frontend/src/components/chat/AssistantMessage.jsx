@@ -3,7 +3,6 @@ import { Copy, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
 import AgentTrace from './AgentTrace';
 import MessageContent from './MessageContent';
 import SourceList from './SourceList';
-import NextSteps from './NextSteps';
 import InquirySuggestion from './InquirySuggestion';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -22,7 +21,6 @@ export default function AssistantMessage({ message, onOpenSource, onFeedback, on
         <AgentTrace steps={message.agent.steps} searchCount={message.agent.searchCount} durationMs={message.agent.durationMs} running={false} />
         <MessageContent content={message.content} onCite={openByIndex} />
         <SourceList sources={message.sources} onOpen={onOpenSource} />
-        <NextSteps steps={message.nextSteps} />
         {message.inquirySuggestion && (
           <InquirySuggestion
             suggestion={message.inquirySuggestion}

@@ -41,7 +41,6 @@ def scripted_agent(app, monkeypatch):
                     content="締め日は **毎月末日** です [1]。",
                     cited=[1],
                     status="answered",
-                    next_steps=[],
                     unresolved=[],
                 )
             ],

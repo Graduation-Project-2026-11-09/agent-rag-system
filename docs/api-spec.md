@@ -109,9 +109,6 @@ def send_message(cid):
       "department": "人事部", "updatedAt": "...", "section": "3.2 氏名変更", "page": 8,
       "excerpt": "回答に使用したチャンクの本文" }
   ],
-  "nextSteps": [
-    { "id": "t1", "title": "氏名変更届の提出", "description": "人事システム > 各種届出", "department": "人事部", "deadline": "速やかに" }
-  ],
   // Agent が「社内資料だけでは解決できない」と判断したときだけ値を入れる。それ以外は null
   "inquirySuggestion": { "department": "人事部", "reason": "…", "subject": "…", "body": "AI が作成した問い合わせ文の下書き" },
   "inquiryId": null,   // 問い合わせ送信済みなら Inquiry の id

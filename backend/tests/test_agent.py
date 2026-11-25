@@ -11,7 +11,6 @@ from app.ai.agent import (
     Evaluation,
     Expansion,
     InquiryDraft,
-    NextStep,
     build_sources,
 )
 from app.ai.llm import Usage
@@ -119,9 +118,6 @@ ANSWER = Answer(
     content="結婚休暇は **5日** です [1]。祝金は **30,000円** です [2]。",
     cited=[1, 2],
     status="answered",
-    next_steps=[
-        NextStep(title="特別休暇申請", description="勤怠システム", department="", deadline="")
-    ],
     unresolved=[],
 )
 DRAFT = InquiryDraft(subject="件名", body="本文", reason="資料に記載がないため")
@@ -161,7 +157,6 @@ def test_agentic_answers_when_information_is_sufficient(documents, llm):
     assert result.answer_status == "answered"
     assert result.inquiry_suggestion is None
     assert [s["index"] for s in result.sources] == [1, 2]
-    assert result.next_steps[0]["department"] is None  # 空文字は「なし」にする
     assert result.usage.input_tokens > 0
     assert scripted.called("inquiry") == 0
 

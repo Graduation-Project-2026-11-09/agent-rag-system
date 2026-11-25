@@ -159,7 +159,6 @@ erDiagram
 | search_count | integer | | 検索した回数 |
 | duration_ms | integer | | 回答までの時間 |
 | sources | jsonb | | 根拠資料（api-spec の `sources`）。**回答の時点の本文（excerpt）をコピー**して持つので、資料が改定・削除されても過去の根拠は変わらない |
-| next_steps | jsonb | | 次に行う手続き |
 | inquiry_suggestion | jsonb | | 問い合わせの下書き（宛先・件名・本文）。回答が `answered` 以外のときだけ |
 | inquiry_id | integer | IDX | この回答から送った問い合わせ。1 つの回答から送れるのは 1 件 |
 | answer_status | varchar(16) | | `answered` / `partial` / `not_found` |
