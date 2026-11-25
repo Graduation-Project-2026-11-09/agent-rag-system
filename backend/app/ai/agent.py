@@ -65,18 +65,10 @@ class Evaluation(BaseModel):
     reason: str
 
 
-class NextStep(BaseModel):
-    title: str
-    description: str
-    department: str
-    deadline: str
-
-
 class Answer(BaseModel):
     content: str
     cited: list[int]
     status: Literal["answered", "partial", "not_found"]
-    next_steps: list[NextStep]
     unresolved: list[str]
 
 
@@ -120,7 +112,6 @@ class AgentResult:
     search_count: int
     duration_ms: int
     sources: list[dict]
-    next_steps: list[dict]
     inquiry_suggestion: dict | None
     answer_status: str
     mode: str
@@ -268,19 +259,6 @@ def build_sources(answer: Answer, hits: list[SearchHit]) -> tuple[str, list[dict
     return content, sources
 
 
-def next_steps_to_dicts(answer: Answer) -> list[dict]:
-    return [
-        {
-            "id": f"t{number}",
-            "title": step.title,
-            "description": step.description,
-            "department": step.department or None,
-            "deadline": step.deadline or None,
-        }
-        for number, step in enumerate(answer.next_steps, start=1)
-    ]
-
-
 def choose_department(analysis: Analysis | None, sources: list[dict]) -> str:
     """問い合わせ先の部署を決める。分析の結果を優先し、なければ根拠資料の部署にする。"""
     if analysis is not None and analysis.department in DEPARTMENTS:
@@ -337,7 +315,7 @@ def run_agentic(
         yield recorder.add(
             "generate", "回答を作成", detail="社内の制度や手続きに関する質問ではありません"
         )
-        return _result(NOT_WORK_CONTENT, recorder, 0, started, [], [], None, "answered", usage)
+        return _result(NOT_WORK_CONTENT, recorder, 0, started, [], None, "answered", usage)
 
     hits: list[SearchHit] = []
     used_queries: list[str] = []
@@ -419,7 +397,7 @@ def _answer(
         yield recorder.add(
             "generate", "回答を作成", detail="根拠となる資料がないため、推測での回答は行いません"
         )
-        return NOT_FOUND_CONTENT, [], [], suggestion, "not_found"
+        return NOT_FOUND_CONTENT, [], suggestion, "not_found"
 
     answer = call_structured(ANSWER, build_answer_input(question, hits, history), usage)
     content, sources = build_sources(answer, hits)
@@ -439,7 +417,7 @@ def _answer(
         else "根拠となる資料がないため、推測での回答は行いません"
     )
     yield recorder.add("generate", "回答を作成", detail=detail)
-    return content, sources, next_steps_to_dicts(answer) if sources else [], suggestion, status
+    return content, sources, suggestion, status
 
 
 def _draft_inquiry(
@@ -464,7 +442,6 @@ def _result(
     search_count: int,
     started: float,
     sources: list[dict],
-    next_steps: list[dict],
     suggestion: dict | None,
     answer_status: str,
     usage: Usage,
@@ -476,7 +453,6 @@ def _result(
         search_count=search_count,
         duration_ms=int((time.monotonic() - started) * 1000),
         sources=sources,
-        next_steps=next_steps,
         inquiry_suggestion=suggestion,
         answer_status=answer_status,
         mode=mode,

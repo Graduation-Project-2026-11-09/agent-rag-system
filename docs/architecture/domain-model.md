@@ -67,7 +67,6 @@ classDiagram
     content
     steps
     sources : SourceCitation[]
-    nextSteps
     inquirySuggestion
     answerStatus
     mode : agentic|basic

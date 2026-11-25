@@ -72,7 +72,6 @@ class Message(db.Model):
     search_count: Mapped[int | None] = mapped_column(Integer)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     sources: Mapped[list | None] = mapped_column(JSONB)
-    next_steps: Mapped[list | None] = mapped_column(JSONB)
     inquiry_suggestion: Mapped[dict | None] = mapped_column(JSONB)
     inquiry_id: Mapped[int | None] = mapped_column(Integer, index=True)
     answer_status: Mapped[str | None] = mapped_column(String(16))
@@ -114,7 +113,6 @@ class Message(db.Model):
                     "durationMs": self.duration_ms or 0,
                 },
                 "sources": self.sources or [],
-                "nextSteps": self.next_steps or [],
                 "inquirySuggestion": self.inquiry_suggestion,
                 "inquiryId": str(self.inquiry_id) if self.inquiry_id else None,
                 "feedback": self.feedback,

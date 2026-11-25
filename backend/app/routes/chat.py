@@ -124,7 +124,6 @@ def send_message(conversation_id: int):
             search_count=result.search_count,
             duration_ms=result.duration_ms,
             sources=result.sources,
-            next_steps=result.next_steps,
             inquiry_suggestion=result.inquiry_suggestion,
             answer_status=result.answer_status,
             mode=result.mode,
